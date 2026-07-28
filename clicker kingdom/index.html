@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clicker Kingdom - 위대한 제국의 건국</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Noto+Serif+KR:wght@400;600;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Topbar Navigation -->
+  <div class="topbar-wrap">
+    <header class="topbar">
+      <div class="logo" id="logoHeader">
+        <svg class="logo-crest" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2 L20 5 V11 C20 16 16.5 19.5 12 21 C7.5 19.5 4 16 4 11 V5 Z" fill="none" stroke="#D4AF37" stroke-width="1.4"/>
+          <path d="M12 6.5 L14.5 9 L12 11.5 L9.5 9 Z" fill="#D4AF37"/>
+        </svg>
+        <span class="logo-text">CLICKER KINGDOM</span>
+      </div>
+
+      <nav class="topbar-nav">
+        <button class="nav-tab-btn" data-nav-view="landing" data-view="landing">🏠 홈</button>
+        <button class="nav-tab-btn" data-nav-view="clicker" data-view="clicker">🏰 클릭</button>
+        <button class="nav-tab-btn" data-nav-view="shop" data-view="shop">⚔️ 군대 상점</button>
+        <button class="nav-tab-btn" data-nav-view="battle" data-view="battle">🛡️ 대전</button>
+        <button class="nav-tab-btn" data-nav-view="ranking" data-view="ranking">🏆 랭킹</button>
+        <button class="nav-tab-btn" data-nav-view="titles" data-view="titles">👑 칭호</button>
+        <button class="nav-tab-btn" data-nav-view="missions" data-view="missions">📜 미션</button>
+        <button class="nav-tab-btn" id="feedbackNavBtn">💡 제보</button>
+        <button class="nav-tab-btn" id="adminNavBtn">⚙️ 관리자</button>
+      </nav>
+
+      <div class="topbar-actions" id="topbarActions"></div>
+    </header>
+  </div>
+
+  <!-- Stage Area -->
+  <main class="stage">
+
+    <!-- 1. Logis.xyz Style Hero Landing View -->
+    <section id="landingView" class="view">
+      <span class="hero-badge">✨ 클릭으로 건설하는 제국 게임</span>
+      <h1 class="hero-title">CLICKER KINGDOM<span>당신만의 위대한 제국을 건설하세요</span></h1>
+      <p class="hero-subtitle">
+        단 한 번의 클릭에서 시작해 강력한 군대를 고용하고,<br>
+        친구가 옆에 있을 때 펼쳐지는 10초 실시간 전선 밀림 대전에서 승리해 명예의 전당에 이름을 올리세요.
+      </p>
+      
+      <div class="hero-actions">
+        <button class="hero-primary-btn" id="landingStartBtn">⚔️ 지금 제국 건설하기</button>
+        <button class="hero-secondary-btn" id="landingViewRankBtn">📜 랭킹 및 칭호 보기</button>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🗡️</div>
+          <h3 class="feature-title">9종의 정예 군대 & 백그라운드 CPS</h3>
+          <p class="feature-desc">농민 창병대부터 백그라운드 군단까지, 웹을 닫아도 자동으로 자금을 수확하세요.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3 class="feature-title">실시간 10초 탭 배틀</h3>
+          <p class="feature-desc">4자리 룸코드로 옆의 친구와 즉시 대전! 폭풍 연타로 상대방 제국의 전선을 실시간으로 밀어붙이세요.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🏆</div>
+          <h3 class="feature-title">명예의 전당 & 칭호</h3>
+          <p class="feature-desc">누적 클릭, 종합 전투력, 전장 명예 3가지 랭킹 경쟁과 수호 칭호 시스템을 즐겨보세요.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Clicker Game Main View -->
+    <section id="clickerView" class="view" hidden>
+      <span class="title-tag-badge" id="currentTitleBadge">👑 [방랑 부족장]</span>
+      <p class="tier-label" id="tierLabel">초라한 오두막</p>
+      <h1 class="click-count" id="clickCount">0</h1>
+      <div class="cps-rate" id="cpsLabel">자동 수확: +0 /초 | 🌙 백그라운드: +0 /초</div>
+
+      <button class="seal-btn" id="sealBtn" aria-label="클릭해서 왕국을 성장시키기">
+        <div class="seal-crown" id="sealCrown">👑</div>
+        <div class="seal-sparkles" id="sealSparkles"></div>
+        <svg class="seal-svg seal-ring" id="sealRing" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="ring-mid" cx="50" cy="50" r="40" opacity="0"/>
+          <circle class="ring-in" cx="50" cy="50" r="34" opacity="0"/>
+        </svg>
+        <svg class="seal-svg seal-crest" id="sealCrest" viewBox="0 0 100 100" aria-hidden="true">
+          <path class="crest-outline" d="M50 14 L74 24 V48 C74 64 63 76 50 82 C37 76 26 64 26 48 V24 Z" opacity="0"/>
+          <path class="crest-diamond-1" d="M50 30 L58 40 L50 50 L42 40 Z" opacity="0"/>
+          <path class="crest-diamond-2" d="M50 50 L58 60 L50 70 L42 60 Z" opacity="0"/>
+        </svg>
+        <div class="seal-gems" id="sealGems">
+          <span class="gem g1"></span>
+          <span class="gem g2"></span>
+          <span class="gem g3"></span>
+          <span class="gem g4"></span>
+        </div>
+      </button>
+      <p class="hint">화면을 누르거나 [Spacebar] 키를 누르면 클릭됩니다</p>
+
+      <!-- Quick Purchase Panel under Clicker -->
+      <div id="quickUpgradesPanel" class="quick-upgrades-wrap"></div>
+
+      <div class="guest-banner" id="guestBanner">
+        <p>로그인하면 제국 기록이 안전하게 저장되고 명예의 전당에 등록돼요.</p>
+        <button class="ghost-btn" id="guestSignupBtn">회원가입하기</button>
+      </div>
+    </section>
+
+    <!-- 3. Upgrades & Visual Effects Shop View (Default: Visual Effects Tab) -->
+    <section id="shopView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">⚔️ 제국 상점 & 보구/이펙트</h2>
+      </div>
+
+      <div class="shop-tabs">
+        <button class="shop-tab-btn active" id="shopTabEffectBtn">✨ 제국 이펙트</button>
+        <button class="shop-tab-btn" id="shopTabArmyBtn">🗡️ 정예 군대 (CPS)</button>
+        <button class="shop-tab-btn" id="shopTabRelicBtn">👑 수동 보구</button>
+        <button class="shop-tab-btn" id="shopTabOfflineBtn">🌙 백그라운드 CPS</button>
+      </div>
+
+      <div id="effectShopList" class="item-list"></div>
+      <div id="armyShopList" class="item-list" hidden></div>
+      <div id="relicShopList" class="item-list" hidden></div>
+      <div id="offlineShopList" class="item-list" hidden></div>
+    </section>
+
+    <!-- 4. Tug-of-War Battle View -->
+    <section id="battleView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🛡️ 제국 전장 (10초 실시간 대전)</h2>
+      </div>
+
+      <div id="battleSetupPanel">
+        <div class="battle-mode-cards">
+          <div class="battle-mode-card" id="aiBattleBtn">
+            <div class="battle-mode-icon">⚔️</div>
+            <div class="battle-mode-title">AI 라이벌 침공</div>
+            <div class="battle-mode-desc">야만족 족장의 암흑 군대와 맞붙어 자금을 약탈합니다.</div>
+          </div>
+          <div class="battle-mode-card" id="createRoomBtn">
+            <div class="battle-mode-icon">📱</div>
+            <div class="battle-mode-title">내 룸 코드 생성</div>
+            <div class="battle-mode-desc">나의 룸 코드를 생성하여 친구에게 알려줍니다.</div>
+          </div>
+        </div>
+
+        <div id="myRoomCodeCard" style="background: rgba(212,175,55,0.15); border: 1px solid var(--gold); border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 14px;" hidden>
+          <span style="font-size: 13px; color: var(--parchment-dim);">🔑 나의 룸 코드: </span>
+          <span id="roomCodeDisplay" style="font-family: 'Cinzel', serif; font-size: 20px; font-weight: 900; color: var(--gold-bright); letter-spacing: 2px;"></span>
+          <p style="font-size: 12px; color: var(--parchment-dim); margin: 4px 0 0;">친구에게 이 코드를 알려주고, 아래에서 친구의 룸 코드를 입력하여 대전하세요!</p>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 6px;">⚔️ 친구의 룸 코드 입력 대전 (로그인 필요):</p>
+          <div class="room-input-card">
+            <input type="text" id="roomCodeInput" class="room-input" placeholder="친구의 4자리 코드 입력 (예: 7829)" maxlength="6">
+            <button class="buy-btn" id="joinRoomBtn">입장 대전</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Tap Battle Arena with Epic Military Clash Visuals -->
+      <div id="battleArenaPanel" class="battle-arena" hidden>
+        <div class="battle-timer" id="battleTimerDisplay">10s</div>
+        <div style="font-size: 15px; font-weight: 700; color: var(--gold-bright);">VS <span id="enemyNameLabel">적 제국</span> (전투력: <span id="enemyPowerLabel">0</span>)</div>
+        
+        <!-- Military Clash Stage Visuals -->
+        <div class="battle-clash-stage">
+          <div class="battle-army-side">
+            <div class="battle-castle-icon">🏰</div>
+            <span style="font-size: 12px; font-weight: 700; color: var(--gold-bright);">내 제국 군대</span>
+            <div class="battle-army-units">🗡️🏹🐎🤖</div>
+          </div>
+
+          <div class="battle-center-clash">
+            <div class="clash-sparks">💥⚔️💥</div>
+            <span style="font-size: 11px; font-weight: 700; color: var(--ruby);">전선 충돌 중!</span>
+          </div>
+
+          <div class="battle-army-side">
+            <div class="battle-castle-icon">🚩</div>
+            <span style="font-size: 12px; font-weight: 700; color: #ff8b8b;" id="enemyCastleLabel">적 암흑 군대</span>
+            <div class="battle-army-units">🧟‍♂️🛡️🔫☢️</div>
+          </div>
+        </div>
+
+        <div class="battle-vs-bar">
+          <div class="battle-frontline-fill" id="battleFrontlineFill"></div>
+        </div>
+
+        <button class="battle-tap-btn" id="battleTapBtn">🔥 폭풍 연타로 전선 밀어내기!</button>
+      </div>
+    </section>
+
+    <!-- 5. Ranking View -->
+    <section id="rankingView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🏆 명예의 전당</h2>
+      </div>
+
+      <div class="ranking-tabs">
+        <button class="rank-tab-btn active" data-rank-tab="clicks">👑 누적 클릭</button>
+        <button class="rank-tab-btn" data-rank-tab="power">⚔️ 종합 전투력</button>
+        <button class="rank-tab-btn" data-rank-tab="honor">🏆 전장 승리</button>
+      </div>
+
+      <div class="ranking-list" id="rankingList"></div>
+    </section>
+
+    <!-- 6. Titles Collection View -->
+    <section id="titlesView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🎖️ 제국 칭호 도감</h2>
+      </div>
+      <div class="titles-grid" id="titlesContainer"></div>
+    </section>
+
+    <!-- 7. Missions View -->
+    <section id="missionsView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">📜 일일 미션 & 업적</h2>
+      </div>
+      <div id="missionsContainer"></div>
+    </section>
+
+  </main>
+
+  <!-- Auth Modal -->
+  <div class="modal-overlay" id="authModal" hidden>
+    <div class="modal-card">
+      <div class="modal-tabs">
+        <button class="modal-tab active" id="tabLogin">로그인</button>
+        <button class="modal-tab" id="tabSignup">회원가입</button>
+      </div>
+
+      <div class="modal-welcome-text" id="authWelcomeText">다시 오신 것을 환영합니다. 황제시여</div>
+
+      <div id="loginForm">
+        <div class="field">
+          <label for="loginId">아이디</label>
+          <input id="loginId" type="text" autocomplete="username" placeholder="아이디">
+        </div>
+        <div class="field">
+          <label for="loginPw">비밀번호</label>
+          <input id="loginPw" type="password" autocomplete="current-password" placeholder="비밀번호">
+        </div>
+        <p class="modal-error" id="loginError" style="color: #ff9d9d; font-size: 12px;"></p>
+        <button class="modal-submit" id="loginSubmit">로그인</button>
+      </div>
+
+      <div id="signupForm" hidden>
+        <div class="field">
+          <label for="signupNickname">닉네임</label>
+          <input id="signupNickname" type="text" placeholder="명예의 전당에 표시될 이름">
+        </div>
+        <div class="field">
+          <label for="signupId">아이디</label>
+          <input id="signupId" type="text" autocomplete="username" placeholder="3자 이상">
+        </div>
+        <div class="field">
+          <label for="signupPw">비밀번호</label>
+          <input id="signupPw" type="password" autocomplete="new-password" placeholder="비밀번호 4자 이상">
+        </div>
+        <div class="field">
+          <label for="signupPw2">비밀번호 확인</label>
+          <input id="signupPw2" type="password" autocomplete="new-password" placeholder="비밀번호 확인">
+        </div>
+        <p class="modal-error" id="signupError" style="color: #ff9d9d; font-size: 12px;"></p>
+        <button class="modal-submit" id="signupSubmit">회원가입</button>
+      </div>
+
+      <button class="modal-close" id="authModalClose">닫기</button>
+    </div>
+  </div>
+
+  <!-- Feedback Modal -->
+  <div class="modal-overlay" id="feedbackModal" hidden>
+    <div class="modal-card">
+      <h3 style="margin: 0 0 14px; color: var(--gold-bright);">💡 버그 제보 및 아이디어 제안</h3>
+      <div class="field">
+        <label for="feedbackCategory">분류</label>
+        <select id="feedbackCategory">
+          <option value="🐛 버그 제보">🐛 버그 제보</option>
+          <option value="💡 아이디어 제안">💡 아이디어 제안</option>
+          <option value="⚔️ 밸런스 의견">⚔️ 밸런스 의견</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="feedbackContent">제안 내용 (제출 시 🎁 +10,000 클릭 지급!)</label>
+        <textarea id="feedbackContent" rows="4" placeholder="더 재미있는 게임을 위한 의견이나 발견하신 버그를 적어주세요."></textarea>
+      </div>
+      <p id="feedbackError" style="color: #ff9d9d; font-size: 12px;"></p>
+      <button class="modal-submit" id="feedbackSubmitBtn">의견 제출하고 포상금 받기</button>
+      <button class="modal-close" id="feedbackModalClose">닫기</button>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div class="modal-overlay" id="adminModal" hidden>
+    <div class="modal-card">
+      <h3 style="margin: 0 0 14px; color: var(--gold-bright);">⚙️ 제국 관리자 대시보드</h3>
+      
+      <div id="adminLoginForm">
+        <div class="field">
+          <label for="adminPwInput">관리자 비밀번호</label>
+          <input id="adminPwInput" type="password" placeholder="비밀번호 입력 (기본: admin)">
+        </div>
+        <p id="adminLoginError" style="color: #ff9d9d; font-size: 12px;"></p>
+        <button class="modal-submit" id="adminLoginSubmit">관리자 접속</button>
+      </div>
+
+      <div id="adminDashboardContent" hidden>
+        <p style="font-size: 13px; color: var(--parchment-dim);">클릭 수 수동 직접 조절 및 치트 패널</p>
+        
+        <div class="field">
+          <label for="adminCustomClickInput">내 클릭 수 직접 설정 (수동 입력)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="adminCustomClickInput" placeholder="원하는 클릭 수 입력 (예: 5000000)">
+            <button class="buy-btn" id="adminSetClickBtn" style="white-space: nowrap;">설정 적용</button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="buy-btn" id="adminCheat1M">+1M 자금</button>
+          <button class="buy-btn" id="adminCheat10M">+10M 자금</button>
+          <button class="buy-btn" id="adminUnlockAll">모두 해금</button>
+        </div>
+
+        <h4 style="color: var(--gold-bright); margin: 16px 0 8px;">📬 유저 제보 내역:</h4>
+        <div id="adminFeedbackList" style="max-height: 200px; overflow-y: auto;"></div>
+      </div>
+
+      <button class="modal-close" id="adminModalClose">닫기</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
