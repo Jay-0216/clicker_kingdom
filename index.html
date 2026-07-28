@@ -328,9 +328,119 @@
           <div id="adminFeedbackList" style="max-height: 200px; overflow-y: auto;"></div>
         </div>
       </div>
+    <!-- 9. Profile Management Page View -->
+    <section id="profileView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">👤 황제 프로필 관리</h2>
+      </div>
+
+      <div class="admin-card">
+        <!-- Avatar Selection -->
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div id="profileAvatarDisplay" style="font-size: 56px; line-height: 1; margin-bottom: 8px;">👑</div>
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 12px;">원하는 프로필 아이콘을 클릭하여 변경하세요</p>
+          <div id="avatarPickerContainer" style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;"></div>
+        </div>
+
+        <!-- Account Info (ID: read-only, Nickname: editable) -->
+        <div class="field">
+          <label for="profileIdInput">계정 아이디 (수정 불가)</label>
+          <input type="text" id="profileIdInput" readonly style="opacity: 0.7; cursor: not-allowed; background: rgba(0,0,0,0.3);">
+        </div>
+
+        <div class="field">
+          <label for="profileNicknameInput">닉네임 (명예의 전당 표시)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="profileNicknameInput" placeholder="새 닉네임 입력 (최대 12자)">
+            <button class="buy-btn" id="saveNicknameBtn" style="white-space: nowrap;">닉네임 저장</button>
+          </div>
+        </div>
+
+        <!-- Title Management in Profile -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">👑 보유 칭호 관리</h4>
+        <div id="profileTitlesList" class="titles-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-bottom: 20px;"></div>
+
+        <!-- Visual Effects Management in Profile -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">✨ 보유 제국 이펙트 관리</h4>
+        <div id="profileEffectsList" class="item-list" style="margin-bottom: 20px;"></div>
+
+        <!-- Statistics Overview -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">📊 통치 기록 요약</h4>
+        <div id="profileStatsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; text-align: center;"></div>
+      </div>
     </section>
 
   </main>
+
+  <!-- Auth Modal -->
+  <div class="modal-overlay" id="authModal" hidden>
+    <div class="modal-card">
+      <div class="modal-tabs">
+        <button class="modal-tab active" id="tabLogin">로그인</button>
+        <button class="modal-tab" id="tabSignup">회원가입</button>
+      </div>
+
+      <div class="modal-welcome-text" id="authWelcomeText">다시 오신 것을 환영합니다. 황제시여</div>
+
+      <div id="loginForm">
+        <div class="field">
+          <label for="loginId">아이디</label>
+          <input id="loginId" type="text" autocomplete="username" placeholder="아이디">
+        </div>
+        <div class="field">
+          <label for="loginPw">비밀번호</label>
+          <input id="loginPw" type="password" autocomplete="current-password" placeholder="비밀번호">
+        </div>
+        <p class="modal-error" id="loginError" style="color: #ff9d9d; font-size: 12px;"></p>
+        <button class="modal-submit" id="loginSubmit">로그인</button>
+      </div>
+
+      <div id="signupForm" hidden>
+        <div class="field">
+          <label for="signupNickname">닉네임</label>
+          <input id="signupNickname" type="text" placeholder="명예의 전당에 표시될 이름">
+        </div>
+        <div class="field">
+          <label for="signupId">아이디</label>
+          <input id="signupId" type="text" autocomplete="username" placeholder="3자 이상">
+        </div>
+        <div class="field">
+          <label for="signupPw">비밀번호</label>
+          <input id="signupPw" type="password" autocomplete="new-password" placeholder="비밀번호 4자 이상">
+        </div>
+        <div class="field">
+          <label for="signupPw2">비밀번호 확인</label>
+          <input id="signupPw2" type="password" autocomplete="new-password" placeholder="비밀번호 확인">
+        </div>
+        <p class="modal-error" id="signupError" style="color: #ff9d9d; font-size: 12px;"></p>
+        <button class="modal-submit" id="signupSubmit">회원가입</button>
+      </div>
+
+      <button class="modal-close" id="authModalClose">닫기</button>
+    </div>
+  </div>
+
+  <!-- Feedback Modal -->
+  <div class="modal-overlay" id="feedbackModal" hidden>
+    <div class="modal-card">
+      <h3 style="margin: 0 0 14px; color: var(--gold-bright);">💡 버그 제보 및 아이디어 제안</h3>
+      <div class="field">
+        <label for="feedbackCategory">분류</label>
+        <select id="feedbackCategory">
+          <option value="🐛 버그 제보">🐛 버그 제보</option>
+          <option value="💡 아이디어 제안">💡 아이디어 제안</option>
+          <option value="⚔️ 밸런스 의견">⚔️ 밸런스 의견</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="feedbackContent">제안 내용 (제출 시 🎁 +10,000 클릭 지급!)</label>
+        <textarea id="feedbackContent" rows="4" placeholder="더 재미있는 게임을 위한 의견이나 발견하신 버그를 적어주세요."></textarea>
+      </div>
+      <p id="feedbackError" style="color: #ff9d9d; font-size: 12px;"></p>
+      <button class="modal-submit" id="feedbackSubmitBtn">의견 제출하고 포상금 받기</button>
+      <button class="modal-close" id="feedbackModalClose">닫기</button>
+    </div>
+  </div>
 
   <!-- Offline Harvest Welcome Modal -->
   <div class="modal-overlay" id="offlineHarvestModal" hidden>

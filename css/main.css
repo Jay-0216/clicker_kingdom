@@ -182,14 +182,17 @@ textarea:focus-visible {
   font-weight: 600;
   color: var(--gold-bright);
   white-space: nowrap;
-  max-width: 150px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   background: transparent;
   border: none;
-  padding: 4px 2px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
 }
-.user-chip:hover { color: var(--parchment); }
+.user-chip:hover { color: var(--parchment); background: rgba(212,175,55,0.12); }
 
 .user-chip-dropdown {
   position: absolute;

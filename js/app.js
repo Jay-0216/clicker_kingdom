@@ -235,6 +235,7 @@ const state = {
   offlineArmies: {},
   equippedTitle: 'title_novice',
   unlockedTitles: ['title_novice'],
+  avatar: '👑',
   warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
   missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
   lastOfflineTime: Date.now(),
@@ -325,6 +326,11 @@ function buyArmy(itemId) {
 }
 
 function buyOfflineArmy(itemId) {
+  if (!state.currentUser) {
+    showToast('🔒 백그라운드 CPS 구축은 로그인이 필요합니다!');
+    openModal('authModal');
+    return;
+  }
   const item = OFFLINE_CPS_ITEMS.find(a => a.id === itemId);
   if (!item) return;
   const currentCount = state.offlineArmies[itemId] || 0;
@@ -857,9 +863,14 @@ function switchView(viewName) {
     openModal('authModal');
     return;
   }
+  if (viewName === 'profile' && !state.currentUser) {
+    showToast('🔒 프로필 관리는 로그인이 필요합니다!');
+    openModal('authModal');
+    return;
+  }
 
   state.currentView = viewName;
-  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'rankingView', 'titlesView', 'missionsView', 'adminView'];
+  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
   views.forEach(vId => {
     const el = document.getElementById(vId);
     if (el) el.hidden = true;
@@ -887,7 +898,8 @@ function renderActiveView() {
 
   const userChip = document.getElementById('userChip');
   if (userChip && state.currentUser) {
-    userChip.textContent = `${state.currentUser.nickname} (🏰 ${tier.title})`;
+    const avatar = state.avatar || '👑';
+    userChip.textContent = `${avatar} ${state.currentUser.nickname}`;
   }
 
   if (state.currentView === 'clicker') {
@@ -902,6 +914,156 @@ function renderActiveView() {
     renderRankingView();
   } else if (state.currentView === 'admin') {
     renderAdminView();
+  } else if (state.currentView === 'profile') {
+    renderProfileView();
+  }
+}
+
+const AVATAR_OPTIONS = ['👑', '🛡️', '⚔️', '🐲', '⚡', '🌌', '🦁', '🦅', '🧙‍♂️', '🏰', '💎', '🚩', '🔥', '🤖'];
+
+function renderProfileView() {
+  if (!state.currentUser) {
+    showToast('🔒 프로필 관리는 로그인이 필요합니다!');
+    openModal('authModal');
+    switchView('clicker');
+    return;
+  }
+
+  const avatarDisplay = document.getElementById('profileAvatarDisplay');
+  const avatarPicker = document.getElementById('avatarPickerContainer');
+  const idInput = document.getElementById('profileIdInput');
+  const nickInput = document.getElementById('profileNicknameInput');
+  const titlesList = document.getElementById('profileTitlesList');
+  const effectsList = document.getElementById('profileEffectsList');
+  const statsGrid = document.getElementById('profileStatsGrid');
+
+  if (avatarDisplay) avatarDisplay.textContent = state.avatar || '👑';
+  if (idInput) idInput.value = state.currentUser.id;
+  if (nickInput && document.activeElement !== nickInput) nickInput.value = state.currentUser.nickname;
+
+  // Render Avatar Options
+  if (avatarPicker) {
+    avatarPicker.innerHTML = AVATAR_OPTIONS.map(av => `
+      <button class="buy-btn ${state.avatar === av ? 'active' : ''}" data-select-avatar="${av}" style="font-size: 20px; padding: 6px 12px; background: ${state.avatar === av ? 'var(--gold-bright)' : 'rgba(0,0,0,0.3)'}; border: ${state.avatar === av ? '2px solid var(--gold)' : '1px solid rgba(212,175,55,0.3)'};">
+        ${av}
+      </button>
+    `).join('');
+
+    avatarPicker.querySelectorAll('[data-select-avatar]').forEach(btn => {
+      btn.onclick = () => {
+        const selected = btn.getAttribute('data-select-avatar');
+        state.avatar = selected;
+        if (avatarDisplay) avatarDisplay.textContent = selected;
+        renderTopbarActions();
+        if (state.currentUser) scheduleSave();
+        renderProfileView();
+        showToast(`👤 프로필 아이콘이 ${selected}(으)로 변경되었습니다.`);
+      };
+    });
+  }
+
+  // Bind Nickname Save
+  const saveNickBtn = document.getElementById('saveNicknameBtn');
+  if (saveNickBtn) {
+    saveNickBtn.onclick = () => {
+      const newNick = nickInput ? nickInput.value.trim() : '';
+      if (!newNick) {
+        showToast('닉네임을 입력해주세요!');
+        return;
+      }
+      if (newNick.length > 12) {
+        showToast('닉네임은 12자 이하로 입력해주세요!');
+        return;
+      }
+      state.currentUser.nickname = newNick;
+      renderTopbarActions();
+      if (state.currentUser) scheduleSave();
+      showToast(`✏️ 닉네임이 [${newNick}] (으)로 변경되었습니다.`);
+    };
+  }
+
+  // Render Titles in Profile
+  if (titlesList) {
+    titlesList.innerHTML = UNLOCKABLE_TITLES.map(t => {
+      const isUnlocked = state.unlockedTitles.includes(t.id);
+      const isEquipped = state.equippedTitle === t.id;
+      return `
+        <div class="title-card ${isEquipped ? 'equipped' : ''}" style="padding: 12px;">
+          <div class="title-card-name" style="font-size: 13px;">${isUnlocked ? '👑 ' + t.name : '🔒 미해금 칭호'}</div>
+          <div class="title-card-desc" style="font-size: 11px;">${t.desc}</div>
+          <button class="buy-btn" data-profile-equip-title="${t.id}" ${!isUnlocked || isEquipped ? 'disabled' : ''} style="margin-top: 6px; font-size: 11px; padding: 4px 10px;">
+            ${isEquipped ? '장착 중' : isUnlocked ? '장착하기' : '미해금'}
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    titlesList.querySelectorAll('[data-profile-equip-title]').forEach(btn => {
+      btn.onclick = () => {
+        equipTitle(btn.getAttribute('data-profile-equip-title'));
+        renderProfileView();
+      };
+    });
+  }
+
+  // Render Visual Effects in Profile
+  if (effectsList) {
+    effectsList.innerHTML = VISUAL_EFFECTS.map(eff => {
+      const owned = state.effects.includes(eff.id);
+      const isEquipped = state.equippedEffect === eff.id;
+      return `
+        <div class="item-card" style="padding: 10px 14px;">
+          <div class="item-icon" style="font-size: 24px;">${eff.icon}</div>
+          <div class="item-info">
+            <span class="item-name">${eff.name} ${isEquipped ? '✨ [장착 중]' : owned ? '🔒 [소지중]' : ''}</span>
+            <span class="item-desc">${eff.desc}</span>
+          </div>
+          <div class="item-action">
+            <button class="buy-btn" data-profile-equip-effect="${eff.id}" ${!owned ? 'disabled' : ''}>
+              ${isEquipped ? '해제하기' : owned ? '장착하기' : '미해금'}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    effectsList.querySelectorAll('[data-profile-equip-effect]').forEach(btn => {
+      btn.onclick = () => {
+        equipEffect(btn.getAttribute('data-profile-equip-effect'));
+        renderProfileView();
+      };
+    });
+  }
+
+  // Render Stats Grid
+  if (statsGrid) {
+    const clicks = getClicks();
+    const bp = calcBattlePower();
+    const wins = state.warRecords.wins || 0;
+    const losses = state.warRecords.losses || 0;
+
+    statsGrid.innerHTML = `
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
+        <div style="font-size: 11px; color: var(--parchment-dim);">누적 자금</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">${clicks.toLocaleString()}</div>
+      </div>
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
+        <div style="font-size: 11px; color: var(--parchment-dim);">자동 수확 (CPS)</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${state.cps.toLocaleString()} /초</div>
+      </div>
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
+        <div style="font-size: 11px; color: var(--parchment-dim);">백그라운드 CPS</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${state.offlineCps.toLocaleString()} /초</div>
+      </div>
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
+        <div style="font-size: 11px; color: var(--parchment-dim);">종합 전투력</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">⚔️ ${bp.toLocaleString()}</div>
+      </div>
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
+        <div style="font-size: 11px; color: var(--parchment-dim);">전장 승패</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">${wins}승 ${losses}패</div>
+      </div>
+    `;
   }
 }
 
@@ -1112,10 +1274,19 @@ function renderShopView(clicks) {
 
   const offlineListEl = document.getElementById('offlineShopList');
   if (offlineListEl) {
-    offlineListEl.innerHTML = OFFLINE_CPS_ITEMS.map(item => {
+    let offlineBanner = '';
+    if (!state.currentUser) {
+      offlineBanner = `
+        <div class="ranking-empty" style="padding: 14px; margin-bottom: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--gold); border-radius: 12px;">
+          🔒 백그라운드 CPS 구축은 로그인이 필요합니다.<br>
+          <button class="buy-btn" id="offlineLoginBannerBtn" style="margin-top: 8px;">로그인하기</button>
+        </div>
+      `;
+    }
+    offlineListEl.innerHTML = offlineBanner + OFFLINE_CPS_ITEMS.map(item => {
       const count = state.offlineArmies[item.id] || 0;
       const cost = getArmyCost(item, count);
-      const canAfford = clicks >= cost;
+      const canAfford = clicks >= cost && !!state.currentUser;
       return `
         <div class="item-card">
           <div class="item-icon">${item.icon}</div>
@@ -1125,12 +1296,15 @@ function renderShopView(clicks) {
           </div>
           <div class="item-action">
             <button class="buy-btn" data-buy-offline="${item.id}" ${canAfford ? '' : 'disabled'}>
-              구축 (${cost.toLocaleString()})
+              ${!state.currentUser ? '로그인 필요' : `구축 (${cost.toLocaleString()})`}
             </button>
           </div>
         </div>
       `;
     }).join('');
+
+    const bannerBtn = document.getElementById('offlineLoginBannerBtn');
+    if (bannerBtn) bannerBtn.onclick = () => openModal('authModal');
 
     offlineListEl.querySelectorAll('[data-buy-offline]').forEach(btn => {
       btn.onclick = () => buyOfflineArmy(btn.getAttribute('data-buy-offline'));
@@ -1298,6 +1472,8 @@ async function flushSave() {
   const account = await getAccount(snapshotId);
   if (account) {
     account.clicks = snapshotClicks;
+    account.nickname = state.currentUser.nickname;
+    account.avatar = state.avatar || '👑';
     account.armies = state.armies;
     account.relics = state.relics;
     account.effects = state.effects;
@@ -1369,12 +1545,14 @@ function renderTopbarActions() {
   const badgeLabel = `☁ ${cloudState.tone === 'success' ? '정상' : cloudState.tone === 'syncing' ? '저장 중' : cloudState.tone === 'warning' ? '부분 오류' : cloudState.tone === 'error' ? '문제' : '대기 중'}`;
 
   if (state.currentUser) {
+    const avatar = state.avatar || '👑';
     actions.innerHTML = `
       <button class="text-btn cloud-mini-badge" id="cloudMiniBadge" title="${escapeHtml(cloudState.summary)}">${badgeLabel}</button>
-      <span class="user-chip" id="userChip">${escapeHtml(state.currentUser.nickname)}</span>
+      <button class="user-chip" id="userChip" title="프로필 관리">${avatar} ${escapeHtml(state.currentUser.nickname)}</button>
       <button class="text-btn" id="logoutBtn">로그아웃</button>
     `;
     document.getElementById('cloudMiniBadge').onclick = handleCloudRefresh;
+    document.getElementById('userChip').onclick = () => switchView('profile');
     document.getElementById('logoutBtn').onclick = handleLogout;
   } else {
     actions.innerHTML = `
@@ -1464,6 +1642,7 @@ async function handleLogin() {
   if (hash !== account.passwordHash) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
   state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
+  state.avatar = account.avatar || '👑';
   state.armies = account.armies || {};
   state.relics = account.relics || {};
   state.effects = account.effects || [];
