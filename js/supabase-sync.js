@@ -2,14 +2,14 @@
 // Clicker Kingdom - Supabase Cloud Synchronization Helper
 // ============================================================================
 
-const SUPABASE_URL = "https://xyzcompany.supabase.co"; // Default fallback / placeholder URL
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // Default fallback key
+const SUPABASE_URL = "https://ufisfakmsaiicetlzjal.supabase.co"; // Default fallback / placeholder URL
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmaXNmYWttc2FpaWNldGx6amFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzQyMzEsImV4cCI6MjEwMDc1MDIzMX0.J9SYa4O5CxekBezv_HP4gGiF0OtjVj1WZjXlR8O2mbI"; // Default fallback key
 
 let supabaseClient = null;
 
 function getSupabaseClient() {
   if (supabaseClient) return supabaseClient;
-  
+
   // Try retrieving custom user credentials from localStorage if configured
   const customUrl = localStorage.getItem('ck_supabase_url') || SUPABASE_URL;
   const customKey = localStorage.getItem('ck_supabase_key') || SUPABASE_ANON_KEY;
@@ -137,6 +137,68 @@ async function supabaseFetchAccount(id) {
     };
   } catch (err) {
     console.warn("Supabase fetch account exception:", err);
+    return null;
+  }
+}
+
+// Create / Update a Room in Supabase for friend battles
+async function supabaseCreateRoom(code, hostData) {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from('rooms')
+      .upsert({
+        code: String(code),
+        host_id: hostData.id,
+        host_nickname: hostData.nickname,
+        host_power: hostData.power || 0,
+        host_cps: hostData.cps || 0,
+        created_at: new Date().toISOString()
+      }, { onConflict: 'code' });
+
+    if (error) {
+      console.warn('supabaseCreateRoom error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('supabaseCreateRoom exception:', err);
+    return false;
+  }
+}
+
+// Fetch a Room from Supabase by room code
+async function supabaseFetchRoom(code) {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('rooms')
+      .select('*')
+      .eq('code', String(code))
+      .single();
+
+    if (error || !data) return null;
+
+    // Expire rooms older than 1 hour
+    const age = Date.now() - new Date(data.created_at).getTime();
+    if (age > 3600000) {
+      await client.from('rooms').delete().eq('code', String(code));
+      return null;
+    }
+
+    return {
+      code: data.code,
+      hostId: data.host_id,
+      hostNickname: data.host_nickname,
+      hostPower: data.host_power || 0,
+      hostCps: data.host_cps || 0
+    };
+  } catch (err) {
+    console.warn('supabaseFetchRoom exception:', err);
     return null;
   }
 }

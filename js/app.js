@@ -1442,7 +1442,7 @@ function setupEventListeners() {
 
   const createRoomBtn = document.getElementById('createRoomBtn');
   if (createRoomBtn) {
-    createRoomBtn.onclick = () => {
+    createRoomBtn.onclick = async () => {
       if (!state.currentUser) {
         showToast('🔒 친구 대전 및 룸 코드 생성은 로그인이 필요합니다!');
         openModal('authModal');
@@ -1452,13 +1452,29 @@ function setupEventListeners() {
       const roomCard = document.getElementById('myRoomCodeCard');
       if (roomCard) roomCard.hidden = false;
       document.getElementById('roomCodeDisplay').textContent = code;
-      showToast(`🔑 나의 룸 코드 [${code}] 생성 완료! 친구에게 알려주세요.`);
+
+      // Upload room to Supabase so friend can find it
+      if (typeof supabaseCreateRoom === 'function') {
+        const ok = await supabaseCreateRoom(code, {
+          id: state.currentUser.id,
+          nickname: state.currentUser.nickname,
+          power: calcBattlePower(),
+          cps: state.cps
+        });
+        if (ok) {
+          showToast(`🔑 룸 코드 [${code}] 생성 완료! 친구에게 알려주세요. (1시간 유효)`);
+        } else {
+          showToast(`🔑 룸 코드 [${code}] 생성 완료! (오프라인 모드)`);
+        }
+      } else {
+        showToast(`🔑 나의 룸 코드 [${code}] 생성 완료! 친구에게 알려주세요.`);
+      }
     };
   }
 
   const joinRoomBtn = document.getElementById('joinRoomBtn');
   if (joinRoomBtn) {
-    joinRoomBtn.onclick = () => {
+    joinRoomBtn.onclick = async () => {
       if (!state.currentUser) {
         showToast('🔒 친구 대전은 로그인이 필요합니다!');
         openModal('authModal');
@@ -1476,7 +1492,35 @@ function setupEventListeners() {
         return;
       }
 
-      startBattle({ name: `[룸 ${inputCode}] 친구 영주의 군대`, power: Math.max(1200, state.cps * 7 + 800) });
+      showToast('🔍 친구의 룸을 탐색 중...');
+
+      // Try to fetch real room data from Supabase
+      let enemyInfo = null;
+      if (typeof supabaseFetchRoom === 'function') {
+        const room = await supabaseFetchRoom(inputCode);
+        if (room) {
+          if (room.hostId === state.currentUser.id) {
+            showToast('⚠️ 자신의 룸 코드는 입력할 수 없습니다!');
+            return;
+          }
+          enemyInfo = {
+            name: `👑 ${room.hostNickname || '친구 영주'}의 군대`,
+            power: room.hostPower || Math.max(1200, state.cps * 7 + 800)
+          };
+          showToast(`⚔️ ${room.hostNickname || '친구 영주'}와의 대전을 시작합니다!`);
+        } else {
+          showToast('❌ 룸 코드를 찾을 수 없습니다. 코드를 확인해 주세요.');
+          return;
+        }
+      } else {
+        // Offline fallback
+        enemyInfo = {
+          name: `[룸 ${inputCode}] 친구 영주의 군대`,
+          power: Math.max(1200, state.cps * 7 + 800)
+        };
+      }
+
+      startBattle(enemyInfo);
     };
   }
 
