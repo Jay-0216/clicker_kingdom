@@ -186,6 +186,41 @@ async function clearSession() {
   localStorage.removeItem('ck_session');
 }
 
+// 수정: 로컬/클라우드 중 더 최신 계정을 골라 같은 기준으로 사용한다.
+function getAccountFreshness(account) {
+  if (!account) return 0;
+  return Math.max(account.updatedAt || 0, account.lastOfflineTime || 0, account.createdAt || 0);
+}
+
+// 수정: 세션 복구/로그인 시 Supabase와 IndexedDB가 엇갈리면 더 최신 데이터를 선택한다.
+async function loadPreferredAccount(id) {
+  const localAccount = await getAccount(id);
+  let cloudAccount = null;
+
+  if (typeof supabaseFetchAccount === 'function') {
+    cloudAccount = await supabaseFetchAccount(id);
+  }
+
+  if (localAccount && cloudAccount) {
+    const useCloud = getAccountFreshness(cloudAccount) > getAccountFreshness(localAccount);
+    const chosen = useCloud ? cloudAccount : localAccount;
+    await setAccount(chosen);
+
+    if (!useCloud && typeof supabaseSyncAccount === 'function') {
+      await supabaseSyncAccount(localAccount);
+    }
+
+    return chosen;
+  }
+
+  if (cloudAccount) {
+    await setAccount(cloudAccount);
+    return cloudAccount;
+  }
+
+  return localAccount;
+}
+
 // ---------- 3. Reactive Central Game State ----------
 const state = {
   currentUser: null,
@@ -209,6 +244,28 @@ const state = {
 const listeners = [];
 function subscribeState(fn) { listeners.push(fn); }
 function notifyStateChange() { listeners.forEach(fn => fn(state)); }
+
+function getCloudStateSnapshot() {
+  if (typeof getCloudSyncState === 'function') return getCloudSyncState();
+  return {
+    tone: 'error',
+    summary: '클라우드 상태 함수를 찾지 못했어.',
+    detail: 'js/supabase-sync.js 로드 순서를 확인해 줘.',
+    diagnostics: null,
+    lastSyncAt: 0,
+    lastErrorAt: Date.now()
+  };
+}
+
+function formatClockTime(ts) {
+  if (!ts) return '기록 없음';
+  return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function buildDiagnosticLine(label, result) {
+  if (!result) return `${label}: 확인 안 함`;
+  return result.ok ? `${label}: 읽기 가능` : `${label}: ${result.code ? `[${result.code}] ` : ''}${result.message}`;
+}
 
 function getClicks() {
   return state.currentUser ? state.currentUser.clicks : state.localClicks;
@@ -553,14 +610,32 @@ function crownGlyph(rank) {
   return String(rank);
 }
 
-async function renderRankingView() {
+// Ranking cache — Supabase fetch throttled to once per 30 seconds
+let _rankingCache = null;
+let _rankingCacheTab = null;
+let _rankingCacheTime = 0;
+const RANKING_CACHE_TTL = 30000; // 30초
+
+async function renderRankingView(forceRefresh = false) {
   const listEl = document.getElementById('rankingList');
   if (!listEl) return;
+
+  const now = Date.now();
+  const cacheValid = _rankingCache &&
+    _rankingCacheTab === currentRankTab &&
+    (now - _rankingCacheTime) < RANKING_CACHE_TTL &&
+    !forceRefresh;
+
+  // If cache is valid, just re-render with cached data (no Supabase call, no flicker)
+  if (cacheValid) {
+    _renderRankingList(listEl, _rankingCache);
+    return;
+  }
 
   listEl.innerHTML = '<div class="ranking-empty">불러오는 중...</div>';
   let leaderboard = await getLeaderboard();
 
-  // Merge cloud leaderboard from Supabase if available
+  // Merge cloud leaderboard from Supabase
   if (typeof supabaseFetchLeaderboard === 'function') {
     const cloudList = await supabaseFetchLeaderboard();
     if (cloudList && cloudList.length > 0) {
@@ -577,13 +652,11 @@ async function renderRankingView() {
     }
   }
 
-
   if (state.currentUser) {
     const idx = leaderboard.findIndex(e => e.id === state.currentUser.id);
     const myBp = calcBattlePower();
     const tObj = UNLOCKABLE_TITLES.find(t => t.id === state.equippedTitle);
     const titleName = tObj ? tObj.name : '방랑 부족장';
-
     const entryData = {
       id: state.currentUser.id,
       nickname: state.currentUser.nickname,
@@ -592,7 +665,6 @@ async function renderRankingView() {
       wins: state.warRecords.wins || 0,
       title: titleName
     };
-
     if (idx >= 0) leaderboard[idx] = entryData;
     else leaderboard.push(entryData);
   }
@@ -605,11 +677,19 @@ async function renderRankingView() {
     leaderboard.sort((a, b) => (b.wins || 0) - (a.wins || 0));
   }
 
+  // Save to cache
+  _rankingCache = leaderboard;
+  _rankingCacheTab = currentRankTab;
+  _rankingCacheTime = Date.now();
+
+  _renderRankingList(listEl, leaderboard);
+}
+
+function _renderRankingList(listEl, leaderboard) {
   if (leaderboard.length === 0) {
     listEl.innerHTML = '<div class="ranking-empty">아직 왕국을 세운 영주가 없습니다.<br>첫 번째 통치자가 되어보세요!</div>';
     return;
   }
-
   listEl.innerHTML = leaderboard.map((entry, i) => {
     const rank = i + 1;
     const isMe = state.currentUser && entry.id === state.currentUser.id;
@@ -617,7 +697,6 @@ async function renderRankingView() {
     if (currentRankTab === 'clicks') scoreDisplay = `${(entry.clicks || 0).toLocaleString()} 클릭`;
     else if (currentRankTab === 'power') scoreDisplay = `⚔️ ${(entry.battlePower || 0).toLocaleString()}`;
     else if (currentRankTab === 'honor') scoreDisplay = `🏆 ${entry.wins || 0}승`;
-
     return `
       <div class="ranking-row ${isMe ? 'me' : ''}">
         <span class="rank-badge ${rank <= 3 ? 'top' + rank : ''}">${crownGlyph(rank)}</span>
@@ -816,6 +895,7 @@ function renderClickerView(clicks, tier) {
 
   // Render ALL affordable Quick Upgrades under Clicker
   renderQuickUpgrades(clicks);
+  renderCloudStatus();
 }
 
 function renderQuickUpgrades(clicks) {
@@ -1183,11 +1263,12 @@ async function flushSave() {
     account.missionProgress = state.missionProgress;
     account.lastOfflineTime = state.lastOfflineTime;
     account.battlePower = calcBattlePower();
+    account.updatedAt = Date.now(); // 수정: 로컬 캐시에도 최신 저장 시각을 남겨 클라우드와 비교 가능하게 한다.
     await setAccount(account);
 
-    // Sync to Supabase Cloud
+    // 수정: 저장이 끝나기 전에 페이지 상태가 바뀌어도 클라우드 반영 확률을 높이도록 await 한다.
     if (typeof supabaseSyncAccount === 'function') {
-      supabaseSyncAccount(account);
+      await supabaseSyncAccount(account);
     }
   }
 
@@ -1238,18 +1319,88 @@ function handleSealClick(e) {
 function renderTopbarActions() {
   const actions = document.getElementById('topbarActions');
   if (!actions) return;
+  const cloudState = getCloudStateSnapshot();
+  const badgeLabel = `☁ ${cloudState.tone === 'success' ? '정상' : cloudState.tone === 'syncing' ? '저장 중' : cloudState.tone === 'warning' ? '부분 오류' : cloudState.tone === 'error' ? '문제' : '대기 중'}`;
 
   if (state.currentUser) {
     actions.innerHTML = `
+      <button class="text-btn cloud-mini-badge" id="cloudMiniBadge" title="${escapeHtml(cloudState.summary)}">${badgeLabel}</button>
       <span class="user-chip" id="userChip">${escapeHtml(state.currentUser.nickname)}</span>
       <button class="text-btn" id="logoutBtn">로그아웃</button>
     `;
+    document.getElementById('cloudMiniBadge').onclick = handleCloudRefresh;
     document.getElementById('logoutBtn').onclick = handleLogout;
   } else {
     actions.innerHTML = `
+      <button class="text-btn cloud-mini-badge" id="cloudMiniBadge" title="${escapeHtml(cloudState.summary)}">${badgeLabel}</button>
       <button class="login-btn" id="loginBtn">로그인</button>
     `;
+    document.getElementById('cloudMiniBadge').onclick = handleCloudRefresh;
     document.getElementById('loginBtn').onclick = () => openModal('authModal');
+  }
+}
+
+function renderCloudStatus() {
+  const cloudState = getCloudStateSnapshot();
+  const pill = document.getElementById('cloudStatusPill');
+  const summary = document.getElementById('cloudStatusSummary');
+  const detail = document.getElementById('cloudStatusDetail');
+  const diagnostic = document.getElementById('cloudStatusDiagnostic');
+  const badge = document.getElementById('cloudMiniBadge');
+
+  const pillLabel = cloudState.tone === 'success'
+    ? '☁ 클라우드 정상'
+    : cloudState.tone === 'syncing'
+      ? '☁ 클라우드 저장 중'
+      : cloudState.tone === 'warning'
+        ? '☁ 클라우드 부분 오류'
+        : cloudState.tone === 'error'
+          ? '☁ 클라우드 문제'
+          : '☁ 클라우드 대기 중';
+
+  if (pill) {
+    pill.className = `cloud-status-pill tone-${cloudState.tone || 'idle'}`;
+    pill.textContent = pillLabel;
+  }
+
+  if (summary) summary.textContent = cloudState.summary || '클라우드 상태 요약이 없어.';
+
+  if (detail) {
+    const stamp = cloudState.lastSyncAt
+      ? `마지막 성공: ${formatClockTime(cloudState.lastSyncAt)}`
+      : cloudState.lastErrorAt
+        ? `마지막 오류: ${formatClockTime(cloudState.lastErrorAt)}`
+        : '아직 저장 시도 기록이 없어.';
+    detail.textContent = `${cloudState.detail || ''} ${stamp}`.trim();
+  }
+
+  if (diagnostic) {
+    if (cloudState.diagnostics) {
+      diagnostic.textContent = [
+        `최근 읽기 진단 ${formatClockTime(cloudState.diagnostics.checkedAt)}`,
+        buildDiagnosticLine('accounts', cloudState.diagnostics.accounts),
+        buildDiagnosticLine('leaderboard', cloudState.diagnostics.leaderboard),
+        buildDiagnosticLine('rooms', cloudState.diagnostics.rooms)
+      ].join(' | ');
+    } else {
+      diagnostic.textContent = '진단 기록 없음';
+    }
+  }
+
+  if (badge) {
+    badge.textContent = pillLabel;
+    badge.title = `${cloudState.summary} ${cloudState.detail || ''}`.trim();
+  }
+}
+
+async function handleCloudRefresh() {
+  if (typeof supabaseRunDiagnostics === 'function') {
+    await supabaseRunDiagnostics();
+    renderTopbarActions();
+    renderCloudStatus();
+    showToast('☁ 클라우드 진단을 다시 확인했어.');
+  } else {
+    showToast('☁ 클라우드 진단 함수를 찾지 못했어.');
   }
 }
 
@@ -1260,11 +1411,7 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  let account = await getAccount(id);
-  if (!account && typeof supabaseFetchAccount === 'function') {
-    account = await supabaseFetchAccount(id);
-    if (account) await setAccount(account);
-  }
+  const account = await loadPreferredAccount(id); // 수정: 로컬만 먼저 믿지 않고 더 최신 계정을 우선 사용한다.
   if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
   const hash = await hashPassword(pw);
@@ -1308,10 +1455,7 @@ async function handleSignup() {
   if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
 
-  let existing = await getAccount(id);
-  if (!existing && typeof supabaseFetchAccount === 'function') {
-    existing = await supabaseFetchAccount(id);
-  }
+  const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
   if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
   const passwordHash = await hashPassword(pw);
@@ -1321,12 +1465,13 @@ async function handleSignup() {
     warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
     missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
     lastOfflineTime: Date.now(),
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
   };
 
   await setAccount(account);
   if (typeof supabaseSyncAccount === 'function') {
-    supabaseSyncAccount(account);
+    await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
   }
 
   state.currentUser = { id, nickname, clicks: 0 };
@@ -1350,9 +1495,10 @@ async function handleLogout() {
 }
 
 function setupEventListeners() {
-  // Global Spacebar Keydown Trigger (triggers click anywhere on clicker page!)
+  // Global Spacebar Keydown Trigger — e.repeat blocks OS key-repeat auto-fire
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+      if (e.repeat) return; // ← 꾹 누르기 방지
       const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
 
@@ -1609,10 +1755,21 @@ function escapeHtml(str) {
 
 async function init() {
   setupEventListeners();
+  window.addEventListener('ck-cloud-status', () => {
+    renderTopbarActions();
+    renderCloudStatus();
+  });
+
+  const cloudRefreshBtn = document.getElementById('cloudStatusRefreshBtn');
+  if (cloudRefreshBtn) cloudRefreshBtn.onclick = handleCloudRefresh;
+
+  if (typeof supabaseRunDiagnostics === 'function') {
+    supabaseRunDiagnostics();
+  }
 
   const session = await getSession();
   if (session && session.id) {
-    const account = await getAccount(session.id);
+    const account = await loadPreferredAccount(session.id); // 수정: 새로고침/다른 기기 복구 시 클라우드 계정도 함께 확인한다.
     if (account) {
       state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
       state.armies = account.armies || {};
@@ -1636,6 +1793,7 @@ async function init() {
 
   renderTopbarActions();
   switchView('landing');
+  renderCloudStatus();
 
   // 1-second auto harvest (CPS) loop
   setInterval(() => {

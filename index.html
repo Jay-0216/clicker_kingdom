@@ -113,6 +113,16 @@
         <p>로그인하면 제국 기록이 안전하게 저장되고 명예의 전당에 등록돼요.</p>
         <button class="ghost-btn" id="guestSignupBtn">회원가입하기</button>
       </div>
+
+      <div class="cloud-status-card" id="cloudStatusCard">
+        <div class="cloud-status-head">
+          <span class="cloud-status-pill tone-idle" id="cloudStatusPill">☁ 클라우드 대기 중</span>
+          <button class="ghost-btn cloud-status-refresh" id="cloudStatusRefreshBtn">재확인</button>
+        </div>
+        <p class="cloud-status-summary" id="cloudStatusSummary">아직 Supabase 연결 상태를 확인하지 않았어.</p>
+        <p class="cloud-status-detail" id="cloudStatusDetail">로그인, 저장, 친구 대전 룸 생성 중에 생긴 클라우드 오류도 여기에 표시돼.</p>
+        <div class="cloud-status-diagnostic" id="cloudStatusDiagnostic">진단 기록 없음</div>
+      </div>
     </section>
 
     <!-- 3. Upgrades & Visual Effects Shop View (Default: Visual Effects Tab) -->

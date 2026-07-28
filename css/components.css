@@ -539,3 +539,99 @@
   from { opacity: 0; transform: translate(-50%, 15px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ---------- Cloud Sync Status ---------- */
+.cloud-mini-badge {
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  background: rgba(255,255,255,0.04);
+  color: var(--parchment-dim);
+}
+.cloud-mini-badge:hover {
+  color: var(--parchment);
+  transform: translateY(-1px);
+}
+.cloud-status-card {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  background: linear-gradient(180deg, rgba(38, 42, 84, 0.78), rgba(20, 22, 46, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 12px 28px rgba(0,0,0,0.18);
+}
+.cloud-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cloud-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.cloud-status-pill.tone-idle {
+  background: rgba(239, 230, 202, 0.08);
+  color: var(--parchment-dim);
+  border-color: rgba(239, 230, 202, 0.16);
+}
+.cloud-status-pill.tone-syncing {
+  background: rgba(212, 175, 55, 0.14);
+  color: var(--gold-bright);
+  border-color: rgba(212, 175, 55, 0.32);
+}
+.cloud-status-pill.tone-success {
+  background: rgba(46, 107, 82, 0.22);
+  color: #9ce7c4;
+  border-color: rgba(92, 197, 149, 0.34);
+}
+.cloud-status-pill.tone-warning {
+  background: rgba(212, 175, 55, 0.16);
+  color: #ffe39a;
+  border-color: rgba(241, 206, 107, 0.32);
+}
+.cloud-status-pill.tone-error {
+  background: rgba(154, 47, 61, 0.22);
+  color: #ffc2ca;
+  border-color: rgba(201, 88, 108, 0.3);
+}
+.cloud-status-summary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--parchment);
+}
+.cloud-status-detail {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--parchment-dim);
+}
+.cloud-status-diagnostic {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(212, 175, 55, 0.14);
+  font-size: 12px;
+  color: var(--parchment-dim);
+  line-height: 1.45;
+}
+.cloud-status-refresh {
+  padding-inline: 10px;
+}
+
+@media (max-width: 640px) {
+  .cloud-status-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
