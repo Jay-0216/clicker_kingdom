@@ -34,11 +34,10 @@ const VISUAL_EFFECTS = [
   { id: 'effect-aura-hellfire', name: '🔥 지옥불 용암 분출', icon: '🔥', cost: 25000000, desc: '지옥의 붉은 용암 불꽃 폭발 이펙트가 타오릅니다.' }
 ];
 
-// Re-balanced Background CPS Items (High Cost, Reduced Yield)
 const OFFLINE_CPS_ITEMS = [
-  { id: 'bg_administrator', name: '백그라운드 행정 집행관', icon: '🏛️', offlineCps: 5, baseCost: 500000, desc: '웹을 닫아도 백그라운드에서 자금 수확 (초당 +5)' },
-  { id: 'bg_guardian_order', name: '시공간 자율 수호 군단', icon: '🛡️', offlineCps: 25, baseCost: 25000000, desc: '자율 작동하는 백그라운드 수호 군단 (초당 +25)' },
-  { id: 'bg_dimensional_citadel', name: '차원 왜곡 방치 요새', icon: '🛸', offlineCps: 100, baseCost: 1000000000, desc: '접속 종료 중에도 방치 자금 수확 (초당 +100)' }
+  { id: 'bg_administrator', name: '백그라운드 행정 집행관', icon: '🏛️', offlineCps: 1, baseCost: 200000000, desc: '웹을 닫아도 백그라운드에서 자금 수확 (초당 +1)' },
+  { id: 'bg_guardian_order', name: '시공간 자율 수호 군단', icon: '🛡️', offlineCps: 5, baseCost: 800000000, desc: '자율 작동하는 백그라운드 수호 군단 (초당 +5)' },
+  { id: 'bg_dimensional_citadel', name: '차원 왜곡 방치 요새', icon: '🛸', offlineCps: 15, baseCost: 1400000000, desc: '접속 종료 중에도 방치 자금 수확 (초당 +15)' }
 ];
 
 const KINGDOM_TIERS = [
