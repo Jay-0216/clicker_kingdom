@@ -52,6 +52,13 @@ textarea:focus-visible {
   z-index: 90;
 }
 
+/* Desktop: topbar-top-row is inline (flex-row) inside the horizontal topbar */
+.topbar-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .topbar {
   width: 100%;
   max-width: 980px;
@@ -222,15 +229,22 @@ textarea:focus-visible {
 .stage {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 20px 14px 40px;
 }
 
 .view {
+  display: block;
   width: 100%;
   max-width: 680px;
   animation: viewFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Ensure hidden views are truly hidden, overriding any display:flex on specific views */
+.view[hidden] {
+  display: none !important;
+  animation: none !important;
 }
 @keyframes viewFadeIn {
   from { opacity: 0; transform: translateY(10px) scale(0.99); }
@@ -631,24 +645,73 @@ textarea:focus-visible {
   animation: glitchSealAnim 0.25s infinite ease-in-out alternate !important;
 }
 
-@media (max-width: 640px) {
-  .topbar-wrap { padding: 6px 4px 0; }
-  .topbar { border-radius: 999px; padding: 4px 6px; gap: 4px; }
-  .logo-text { display: none; }
-  .topbar-nav {
-    justify-content: flex-start;
-    padding: 2px 2px;
-    gap: 3px;
-    -webkit-overflow-scrolling: touch;
+/* ── Responsive Topbar: wrap to two rows on small screens ── */
+@media (max-width: 700px) {
+  .topbar-wrap { padding: 6px 6px 0; }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: 20px;
+    padding: 8px 10px;
+    gap: 6px;
   }
+
+  /* Top row: logo + account chip */
+  .topbar > .logo,
+  .topbar > .topbar-actions {
+    /* These are siblings inside .topbar; wrap them in a row */
+  }
+
+  /* We need the logo & actions in one flex row */
+  .topbar-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  /* Nav buttons row: wrap to multiple lines */
+  .topbar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow-x: visible;
+    gap: 4px;
+    padding: 0;
+    width: 100%;
+    flex: unset;
+  }
+
   .nav-tab-btn {
     font-size: 11px;
-    padding: 4px 8px;
+    padding: 5px 9px;
     letter-spacing: -0.2px;
+    flex-shrink: 0;
   }
+
+  .logo-text { font-size: 12px; }
+
   .user-chip, .login-btn {
     font-size: 11px;
-    padding: 4px 8px;
+    padding: 4px 9px;
   }
+
   .hero-title span { font-size: 18px; white-space: normal; }
+}
+
+@media (max-width: 400px) {
+  .topbar { border-radius: 16px; padding: 6px 8px; }
+  .nav-tab-btn { font-size: 10px; padding: 4px 7px; }
+  .logo-text { display: none; }
+}
+
+/* Shooter canvas: responsive height on mobile */
+@media (max-width: 600px) {
+  #shooterCanvasContainer {
+    height: 280px !important;
+  }
+  #shooterCanvas {
+    height: 280px !important;
+  }
 }
