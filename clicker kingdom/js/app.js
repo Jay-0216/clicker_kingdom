@@ -73,18 +73,35 @@ function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e) => {
+      console.log('[Storage] IndexedDB 업그레이드 중...');
       const db = e.target.result;
       if (!db.objectStoreNames.contains('accounts')) db.createObjectStore('accounts', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('leaderboard')) db.createObjectStore('leaderboard', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('feedbacks')) db.createObjectStore('feedbacks', { keyPath: 'id', autoIncrement: true });
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      console.log('[Storage] IndexedDB 연결 성공');
+      resolve(request.result);
+    };
+    request.onerror = (e) => {
+      console.error('[Storage] IndexedDB 연결 실패:', e.target.error);
+      reject(request.error);
+    };
   });
 }
 
 async function hashPassword(pw) {
   const enc = new TextEncoder().encode(pw);
+  if (!window.crypto || !window.crypto.subtle) {
+    console.warn('[Auth] crypto.subtle 미지원 - 폴백 해시 사용');
+    let hash = 0;
+    for (let i = 0; i < pw.length; i++) {
+      const chr = pw.charCodeAt(i);
+      hash = ((hash << 5) - hash) + chr;
+      hash |= 0;
+    }
+    return 'fallback_' + Math.abs(hash).toString(16);
+  }
   const buf = await crypto.subtle.digest('SHA-256', enc);
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -96,9 +113,13 @@ async function getAccount(id) {
       const tx = db.transaction('accounts', 'readonly');
       const req = tx.objectStore('accounts').get(id);
       req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
+      req.onerror = (e) => {
+        console.error('[Storage] getAccount 오류:', e);
+        resolve(null);
+      };
     });
   } catch (e) {
+    console.error('[Storage] getAccount catch:', e);
     return null;
   }
 }
@@ -109,11 +130,25 @@ async function setAccount(acc) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction('accounts', 'readwrite');
       const req = tx.objectStore('accounts').put(acc);
-      req.onsuccess = () => resolve(true);
-      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        console.log('[Storage] 계정 저장 완료:', acc.id);
+        resolve(true);
+      };
+      req.onerror = (e) => {
+        console.error('[Storage] setAccount req 오류:', e.target.error);
+        reject(e.target.error);
+      };
+      tx.oncomplete = () => {
+        console.log('[Storage] setAccount 트랜잭션 완료');
+      };
+      tx.onerror = (e) => {
+        console.error('[Storage] setAccount 트랜잭션 오류:', e.target.error);
+        reject(e.target.error);
+      };
     });
   } catch (e) {
-    return false;
+    console.error('[Storage] setAccount catch:', e);
+    throw e;
   }
 }
 
@@ -1163,6 +1198,10 @@ async function flushSave() {
   else leaderboard.push(entry);
 
   await setLeaderboard(leaderboard);
+
+  if (window.CloudSync) {
+    window.CloudSync.debouncedSave(snapshotId, state);
+  }
 }
 
 function handleSealClick(e) {
@@ -1195,6 +1234,11 @@ function renderTopbarActions() {
   const actions = document.getElementById('topbarActions');
   if (!actions) return;
 
+  const adminBtn = document.getElementById('adminNavBtn');
+  if (adminBtn) {
+    adminBtn.hidden = !(state.currentUser && state.currentUser.id === 'jay0216');
+  }
+
   if (state.currentUser) {
     actions.innerHTML = `
       <span class="user-chip" id="userChip">${escapeHtml(state.currentUser.nickname)}</span>
@@ -1216,10 +1260,34 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await getAccount(id);
-  if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
-  const hash = await hashPassword(pw);
-  if (hash !== account.passwordHash) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+  let account;
+  try {
+    account = await getAccount(id);
+  } catch (e) {
+    console.error('[Auth] getAccount 오류:', e);
+    errEl.textContent = '데이터베이스 오류가 발생했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+    return;
+  }
+
+  if (!account) {
+    errEl.textContent = '아이디를 찾을 수 없습니다. 회원가입 먼저 해주세요.';
+    return;
+  }
+
+  let hash;
+  try {
+    hash = await hashPassword(pw);
+  } catch (e) {
+    console.error('[Auth] hashPassword 오류:', e);
+    errEl.textContent = '인증 처리 중 오류가 발생했습니다.';
+    return;
+  }
+
+  if (hash !== account.passwordHash) {
+    console.warn('[Auth] 해시 불일치 - 입력:', hash, '저장:', account.passwordHash);
+    errEl.textContent = '비밀번호가 올바르지 않습니다.';
+    return;
+  }
 
   state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
   state.armies = account.armies || {};
@@ -1234,6 +1302,30 @@ async function handleLogin() {
   
   recalculateCPS();
   recalculateMultipliers();
+
+  // 클라우드에서 최신 데이터 로드 시도 (IndxDB보다 최신이면 덮어쓰기)
+  if (window.CloudSync) {
+    const cloudData = await window.CloudSync.loadFromCloud(id);
+    if (cloudData) {
+      const localTime = account.lastOfflineTime || 0;
+      const cloudTime = cloudData.lastOfflineTime || 0;
+      if (cloudTime > localTime) {
+        state.currentUser.clicks = cloudData.clicks || state.currentUser.clicks;
+        state.armies = cloudData.armies || state.armies;
+        state.relics = cloudData.relics || state.relics;
+        state.effects = cloudData.effects || state.effects;
+        state.equippedEffect = cloudData.equippedEffect || state.equippedEffect;
+        state.offlineArmies = cloudData.offlineArmies || state.offlineArmies;
+        state.equippedTitle = cloudData.equippedTitle || state.equippedTitle;
+        state.unlockedTitles = cloudData.unlockedTitles || state.unlockedTitles;
+        state.warRecords = cloudData.warRecords || state.warRecords;
+        state.missionProgress = cloudData.missionProgress || state.missionProgress;
+        recalculateCPS();
+        recalculateMultipliers();
+        showToast('☁️ 클라우드에서 최신 데이터를 동기화했습니다!');
+      }
+    }
+  }
 
   // Process Offline Background CPS Harvest
   const now = Date.now();
@@ -1267,10 +1359,25 @@ async function handleSignup() {
   if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
 
-  const existing = await getAccount(id);
+  let existing;
+  try {
+    existing = await getAccount(id);
+  } catch (e) {
+    console.error('[Auth] 회원가입 getAccount 오류:', e);
+    errEl.textContent = '데이터베이스 오류가 발생했습니다.';
+    return;
+  }
   if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
-  const passwordHash = await hashPassword(pw);
+  let passwordHash;
+  try {
+    passwordHash = await hashPassword(pw);
+  } catch (e) {
+    console.error('[Auth] 회원가입 hashPassword 오류:', e);
+    errEl.textContent = '비밀번호 처리 중 오류가 발생했습니다.';
+    return;
+  }
+
   const account = {
     id, nickname, passwordHash, clicks: 0,
     armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
@@ -1280,7 +1387,14 @@ async function handleSignup() {
     createdAt: Date.now()
   };
 
-  await setAccount(account);
+  try {
+    await setAccount(account);
+  } catch (e) {
+    console.error('[Auth] 회원가입 setAccount 오류:', e);
+    errEl.textContent = '계정 저장 중 오류가 발생했습니다. 다시 시도해 주세요.';
+    return;
+  }
+
   state.currentUser = { id, nickname, clicks: 0 };
   state.localClicks = 0;
   await setSession(id);
@@ -1471,7 +1585,12 @@ function setupEventListeners() {
   // Subscribe state changes
   subscribeState(renderActiveView);
 
-  window.addEventListener('beforeunload', flushSave);
+  window.addEventListener('beforeunload', () => {
+    flushSave();
+    if (window.CloudSync && state.currentUser) {
+      window.CloudSync.saveToCloud(state.currentUser.id, state);
+    }
+  });
 }
 
 function setModalTab(tab) {
@@ -1492,6 +1611,7 @@ function escapeHtml(str) {
 }
 
 async function init() {
+  if (window.CloudSync) window.CloudSync.init();
   setupEventListeners();
 
   const session = await getSession();
@@ -1510,6 +1630,29 @@ async function init() {
       state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
       recalculateCPS();
       recalculateMultipliers();
+
+      // 클라우드에서 최신 데이터 로드 시도
+      if (window.CloudSync) {
+        const cloudData = await window.CloudSync.loadFromCloud(session.id);
+        if (cloudData) {
+          const localTime = account.lastOfflineTime || 0;
+          const cloudTime = cloudData.lastOfflineTime || 0;
+          if (cloudTime > localTime) {
+            state.currentUser.clicks = cloudData.clicks || state.currentUser.clicks;
+            state.armies = cloudData.armies || state.armies;
+            state.relics = cloudData.relics || state.relics;
+            state.effects = cloudData.effects || state.effects;
+            state.equippedEffect = cloudData.equippedEffect || state.equippedEffect;
+            state.offlineArmies = cloudData.offlineArmies || state.offlineArmies;
+            state.equippedTitle = cloudData.equippedTitle || state.equippedTitle;
+            state.unlockedTitles = cloudData.unlockedTitles || state.unlockedTitles;
+            state.warRecords = cloudData.warRecords || state.warRecords;
+            state.missionProgress = cloudData.missionProgress || state.missionProgress;
+            recalculateCPS();
+            recalculateMultipliers();
+          }
+        }
+      }
 
       // Process Offline Background CPS Harvest on startup
       const now = Date.now();

@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Noto+Serif+KR:wght@400;600;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="css/components.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-sync.js"></script>
 </head>
 <body>
 <div id="app">
@@ -33,7 +35,7 @@
         <button class="nav-tab-btn" data-nav-view="titles" data-view="titles">👑 칭호</button>
         <button class="nav-tab-btn" data-nav-view="missions" data-view="missions">📜 미션</button>
         <button class="nav-tab-btn" id="feedbackNavBtn">💡 제보</button>
-        <button class="nav-tab-btn" id="adminNavBtn">⚙️ 관리자</button>
+        <button class="nav-tab-btn" id="adminNavBtn" hidden>⚙️ 관리자</button>
       </nav>
 
       <div class="topbar-actions" id="topbarActions"></div>
