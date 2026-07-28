@@ -238,7 +238,10 @@ const CloudSync = (() => {
   // ==================== Account Auth ====================
 
   async function saveAccountToCloud(account) {
-    if (!isConfigured || !supabase) return false;
+    if (!isConfigured || !supabase) {
+      console.warn('[CloudSync] Supabase 미설정 - 계정 동기화 건너뜀');
+      return false;
+    }
     try {
       const payload = {
         id: account.id,
@@ -255,14 +258,23 @@ const CloudSync = (() => {
         war_records: account.warRecords || {},
         mission_progress: account.missionProgress || {},
         last_offline_time: account.lastOfflineTime || Date.now(),
+        created_at: account.createdAt || Date.now(),
         updated_at: new Date().toISOString()
       };
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('accounts')
-        .upsert(payload, { onConflict: 'id' });
-      if (error) { console.warn('[CloudSync] 계정 저장 실패:', error.message); return false; }
+        .upsert(payload, { onConflict: 'id' })
+        .select();
+      if (error) {
+        console.error('[CloudSync] 계정 저장 실패:', error.message, error.details, error.hint);
+        return false;
+      }
+      console.log('[CloudSync] 계정 저장 성공:', account.id);
       return true;
-    } catch (e) { console.warn('[CloudSync] 계정 저장 오류:', e); return false; }
+    } catch (e) {
+      console.error('[CloudSync] 계정 저장 오류:', e.message || e);
+      return false;
+    }
   }
 
   async function getAccountFromCloud(id) {
@@ -294,13 +306,42 @@ const CloudSync = (() => {
     } catch (e) { return null; }
   }
 
+  async function testConnection() {
+    console.log('[CloudSync] === 연결 테스트 ===');
+    console.log('설정 상태:', isConfigured);
+    if (!isConfigured) { console.log('⚠️ SUPABASE_URL / ANON_KEY가 placeholder 상태입니다.'); return; }
+    try {
+      const { data, error } = await supabase.from('accounts').select('id').limit(1);
+      if (error) {
+        console.error('❌ accounts 테이블 조회 실패:', error.message, error.details);
+      } else {
+        console.log('✅ accounts 테이블 연결 성공! 현재 레코드 수:', data.length);
+      }
+    } catch (e) {
+      console.error('❌ 연결 테스트 오류:', e.message);
+    }
+  }
+
+  async function migrateAccounts(accountsArray) {
+    if (!isConfigured || !supabase) return { ok: 0, fail: 0, errors: [] };
+    let ok = 0, fail = 0, errors = [];
+    for (const acc of accountsArray) {
+      try {
+        const result = await saveAccountToCloud(acc);
+        if (result) ok++; else { fail++; errors.push(acc.id + ': 저장 실패'); }
+      } catch (e) { fail++; errors.push(acc.id + ': ' + (e.message || e)); }
+    }
+    return { ok, fail, errors };
+  }
+
   return {
     init, keepAlive, saveToCloud, loadFromCloud, debouncedSave,
     stopKeepAlive, getStatus,
     getLeaderboard, setLeaderboardEntry, removeLeaderboardEntry,
     createBattleRoom, getBattleRoom, joinBattleRoom,
     updateBattleClicks, setBattleResult, cleanupBattleRoom,
-    saveAccountToCloud, getAccountFromCloud
+    saveAccountToCloud, getAccountFromCloud,
+    testConnection, migrateAccounts
   };
 
 })();

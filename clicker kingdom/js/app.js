@@ -90,6 +90,38 @@ function openDB() {
   });
 }
 
+async function getAllAccountsFromDB() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('accounts', 'readonly');
+    const store = tx.objectStore('accounts');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+async function migrateAllAccountsToCloud() {
+  if (!window.CloudSync || !window.CloudSync.getStatus().configured) {
+    showToast('⚠️ Supabase 미연결 상태입니다.');
+    return;
+  }
+  const accounts = await getAllAccountsFromDB();
+  if (!accounts.length) {
+    showToast('IndexedDB에 저장된 계정이 없습니다.');
+    return;
+  }
+  showToast(`${accounts.length}개 계정 마이그레이션 시작...`);
+  const result = await window.CloudSync.migrateAccounts(accounts);
+  if (result.fail === 0) {
+    showToast(`✅ ${result.ok}개 계정 모두 Supabase에 저장 완료!`);
+  } else {
+    showToast(`⚠️ ${result.ok}개 성공 / ${result.fail}개 실패`);
+    console.error('[마이그레이션] 실패 목록:', result.errors);
+  }
+  console.log('[마이그레이션] 결과:', result);
+}
+
 async function hashPassword(pw) {
   const enc = new TextEncoder().encode(pw);
   if (!window.crypto || !window.crypto.subtle) {
@@ -129,8 +161,9 @@ async function getAccount(id) {
 }
 
 async function setAccount(acc) {
-  if (window.CloudSync) {
-    await window.CloudSync.saveAccountToCloud(acc);
+  if (window.CloudSync && window.CloudSync.getStatus().configured) {
+    const ok = await window.CloudSync.saveAccountToCloud(acc);
+    if (!ok) console.warn('[Auth] Supabase 계정 저장 실패 - 로컬에만 저장됨');
   }
   try {
     const db = await openDB();
@@ -495,7 +528,7 @@ async function generateRoomCode() {
     const room = await window.CloudSync.createBattleRoom(myGeneratedRoomCode, {
       id: state.currentUser.id,
       nickname: state.currentUser.nickname,
-      power: calcBattlePower()
+      power: 0
     });
     if (!room) {
       showToast('⚠️ 클라우드 룸 생성 실패. 로컬 모드로 전환합니다.');
@@ -509,7 +542,7 @@ async function joinBattleRoom(roomCode) {
     const room = await window.CloudSync.joinBattleRoom(roomCode, {
       id: state.currentUser.id,
       nickname: state.currentUser.nickname,
-      power: calcBattlePower()
+      power: 0
     });
     if (!room) {
       showToast('❌ 방을 찾을 수 없습니다. 코드를 확인해주세요.');
@@ -535,7 +568,7 @@ function startBattle(enemyInfo) {
 
   document.getElementById('enemyNameLabel').textContent = enemyInfo.name;
   document.getElementById('enemyCastleLabel').textContent = enemyInfo.name;
-  document.getElementById('enemyPowerLabel').textContent = enemyInfo.power.toLocaleString();
+  document.getElementById('enemyPowerLabel').textContent = '클릭으로 승부!';
   document.getElementById('battleTimerDisplay').textContent = '10s';
 
   updateFrontlineVisual();
@@ -548,8 +581,7 @@ function startBattle(enemyInfo) {
     battlePollInterval = setInterval(async () => {
       const room = await window.CloudSync.getBattleRoom(currentBattleRoomCode);
       if (room) {
-        const mySide = currentBattleSide;
-        const opponentClicks = mySide === 'host' ? (room.guest_clicks || 0) : (room.host_clicks || 0);
+        const opponentClicks = currentBattleSide === 'host' ? (room.guest_clicks || 0) : (room.host_clicks || 0);
         enemyClicksInBattle = opponentClicks;
         updateFrontlineVisual();
       }
@@ -560,9 +592,10 @@ function startBattle(enemyInfo) {
     battleTimeLeft--;
     document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
+    // AI 대전: AI가 초당 일정 클릭 수를 랜덤으로 입력
     if (!currentBattleRoomCode || !currentBattleSide || !window.CloudSync) {
-      const simulatedTapRate = Math.floor(enemyInfo.power / 500) + Math.floor(Math.random() * 4);
-      enemyClicksInBattle += simulatedTapRate;
+      const aiClicksPerSec = Math.floor(Math.random() * 6) + 3;
+      enemyClicksInBattle += aiClicksPerSec;
     }
 
     // 내 클릭 수를 클라우드에 업데이트
@@ -585,13 +618,13 @@ function registerMyBattleTap() {
 }
 
 function updateFrontlineVisual() {
-  const myBp = calcBattlePower() + (myClicksInBattle * 150);
-  const enemyBp = currentEnemy.power + (enemyClicksInBattle * 150);
+  const myTotal = myClicksInBattle;
+  const enemyTotal = enemyClicksInBattle;
 
   let fillPercent = 50;
-  const totalPower = myBp + enemyBp;
-  if (totalPower > 0) {
-    fillPercent = Math.min(95, Math.max(5, (myBp / totalPower) * 100));
+  const total = myTotal + enemyTotal;
+  if (total > 0) {
+    fillPercent = Math.min(95, Math.max(5, (myTotal / total) * 100));
   }
 
   const fillEl = document.getElementById('battleFrontlineFill');
@@ -600,23 +633,21 @@ function updateFrontlineVisual() {
 
 function endBattle() {
   clearInterval(battleInterval);
+  if (battlePollInterval) { clearInterval(battlePollInterval); battlePollInterval = null; }
 
-  const myTotalPower = calcBattlePower() + (myClicksInBattle * 150);
-  const enemyTotalPower = currentEnemy.power + (enemyClicksInBattle * 150);
-
-  const isWin = myTotalPower >= enemyTotalPower;
+  const isWin = myClicksInBattle >= enemyClicksInBattle;
   state.warRecords.totalBattles = (state.warRecords.totalBattles || 0) + 1;
   state.missionProgress.battleCount = (state.missionProgress.battleCount || 0) + 1;
 
   if (isWin) {
     state.warRecords.wins = (state.warRecords.wins || 0) + 1;
-    const plunder = Math.max(1000, Math.floor(currentEnemy.power * 0.5));
+    const plunder = Math.max(1000, Math.floor(myClicksInBattle * 150));
     state.warRecords.plunderedClicks = (state.warRecords.plunderedClicks || 0) + plunder;
     addClicks(plunder);
-    showToast(`🎉 대전 승리! 적 제국의 전선을 무너뜨리고 +${plunder.toLocaleString()} 클릭 자금을 약탈했습니다!`);
+    showToast(`🎉 승리! (${myClicksInBattle} vs ${enemyClicksInBattle}) +${plunder.toLocaleString()} 클릭 약탈!`);
   } else {
     state.warRecords.losses = (state.warRecords.losses || 0) + 1;
-    showToast(`💔 아쉬운 패배... 적의 방어선에 막혔습니다.`);
+    showToast(`💔 패배... (${myClicksInBattle} vs ${enemyClicksInBattle})`);
   }
 
   checkTitleUnlocks();
@@ -1644,13 +1675,21 @@ async function handleSignup() {
     return;
   }
 
+  console.log('[Auth] 회원가입 완료:', id);
+
   state.currentUser = { id, nickname, clicks: 0 };
   state.localClicks = 0;
   await setSession(id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
-  showToast(`환영해요, ${nickname}님! 영지가 생성됐어요.`);
+
+  const csStatus = window.CloudSync ? window.CloudSync.getStatus() : null;
+  if (csStatus && csStatus.configured) {
+    showToast(`환영해요, ${nickname}님! (클라우드 동기화 완료)`);
+  } else {
+    showToast(`환영해요, ${nickname}님! (⚠️ Supabase 미연결 - 로컬 모드)`);
+  }
 }
 
 async function handleLogout() {
@@ -1754,7 +1793,7 @@ function setupEventListeners() {
   const aiBattleBtn = document.getElementById('aiBattleBtn');
   if (aiBattleBtn) {
     aiBattleBtn.onclick = () => {
-      startBattle({ name: '야만족 족장의 암흑 군대', power: Math.max(500, state.cps * 8 + 200) });
+      startBattle({ name: '야만족 족장의 암흑 군대' });
     };
   }
 
@@ -1794,7 +1833,7 @@ function setupEventListeners() {
         return;
       }
 
-      startBattle({ name: `[룸 ${inputCode}] 친구 영주의 군대`, power: Math.max(1200, state.cps * 7 + 800) });
+      startBattle({ name: `[룸 ${inputCode}] 친구 영주의 군대` });
     };
   }
 
@@ -1830,6 +1869,11 @@ function setupEventListeners() {
   document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
   document.getElementById('adminCheat10M').onclick = () => giveAdminGold(10000000);
   document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
+  document.getElementById('adminTestConnection').onclick = () => {
+    if (window.CloudSync) window.CloudSync.testConnection();
+    else showToast('⚠️ CloudSync 미로드');
+  };
+  document.getElementById('adminMigrateAccounts').onclick = migrateAllAccountsToCloud;
   document.getElementById('adminModalClose').onclick = () => closeModal('adminModal');
   setupAdminUserEvents();
 

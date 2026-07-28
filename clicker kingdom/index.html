@@ -172,7 +172,7 @@
       <!-- Real-time Tap Battle Arena with Epic Military Clash Visuals -->
       <div id="battleArenaPanel" class="battle-arena" hidden>
         <div class="battle-timer" id="battleTimerDisplay">10s</div>
-        <div style="font-size: 15px; font-weight: 700; color: var(--gold-bright);">VS <span id="enemyNameLabel">적 제국</span> (전투력: <span id="enemyPowerLabel">0</span>)</div>
+        <div style="font-size: 15px; font-weight: 700; color: var(--gold-bright);">VS <span id="enemyNameLabel">적 제국</span> — <span id="enemyPowerLabel">클릭으로 승부!</span></div>
         
         <!-- Military Clash Stage Visuals -->
         <div class="battle-clash-stage">
@@ -334,6 +334,12 @@
           <button class="buy-btn" id="adminCheat1M">+1M 자금</button>
           <button class="buy-btn" id="adminCheat10M">+10M 자금</button>
           <button class="buy-btn" id="adminUnlockAll">모두 해금</button>
+        </div>
+
+        <h4 style="color: var(--gold-bright); margin: 16px 0 8px;">☁️ Supabase 동기화</h4>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="buy-btn" id="adminTestConnection">연결 테스트</button>
+          <button class="buy-btn" id="adminMigrateAccounts">IndexedDB → Supabase 마이그레이션</button>
         </div>
 
         <h4 style="color: var(--gold-bright); margin: 16px 0 8px;">👤 유저 관리</h4>
