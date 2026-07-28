@@ -558,7 +558,25 @@ async function renderRankingView() {
   if (!listEl) return;
 
   listEl.innerHTML = '<div class="ranking-empty">불러오는 중...</div>';
-  const leaderboard = await getLeaderboard();
+  let leaderboard = await getLeaderboard();
+
+  // Merge cloud leaderboard from Supabase if available
+  if (typeof supabaseFetchLeaderboard === 'function') {
+    const cloudList = await supabaseFetchLeaderboard();
+    if (cloudList && cloudList.length > 0) {
+      cloudList.forEach(cloudEntry => {
+        const idx = leaderboard.findIndex(e => e.id === cloudEntry.id);
+        if (idx >= 0) {
+          if ((cloudEntry.clicks || 0) > (leaderboard[idx].clicks || 0)) {
+            leaderboard[idx] = cloudEntry;
+          }
+        } else {
+          leaderboard.push(cloudEntry);
+        }
+      });
+    }
+  }
+
 
   if (state.currentUser) {
     const idx = leaderboard.findIndex(e => e.id === state.currentUser.id);
@@ -1110,6 +1128,39 @@ function scheduleSave() {
   saveTimeout = setTimeout(flushSave, 1000);
 }
 
+function formatTimeDuration(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 0) return `${m}분 ${s}초`;
+  return `${s}초`;
+}
+
+function checkOfflineHarvest(lastTime) {
+  if (!lastTime) return;
+  const now = Date.now();
+  const elapsedSec = Math.floor((now - lastTime) / 1000);
+  state.lastOfflineTime = now;
+
+  if (elapsedSec >= 5 && (state.cps > 0 || state.offlineCps > 0)) {
+    const effectiveRate = state.offlineCps > 0 ? state.offlineCps : Math.max(1, Math.floor(state.cps * 0.5));
+    const reward = elapsedSec * effectiveRate;
+    addClicks(reward);
+
+    const timeEl = document.getElementById('offlineTimeDisplay');
+    const earnedEl = document.getElementById('offlineEarnedDisplay');
+    const rateEl = document.getElementById('offlineCpsRateDisplay');
+
+    if (timeEl && earnedEl && rateEl) {
+      timeEl.textContent = formatTimeDuration(elapsedSec);
+      earnedEl.textContent = `+${reward.toLocaleString()} 클릭`;
+      rateEl.textContent = `(백그라운드 수확 속도: +${effectiveRate.toLocaleString()} /초)`;
+      openModal('offlineHarvestModal');
+    } else {
+      showToast(`🌙 접속하지 않은 ${formatTimeDuration(elapsedSec)} 동안 +${reward.toLocaleString()} 자금을 수확했습니다!`);
+    }
+  }
+}
+
 async function flushSave() {
   if (!saveQueued || !state.currentUser) return;
   saveQueued = false;
@@ -1131,7 +1182,13 @@ async function flushSave() {
     account.warRecords = state.warRecords;
     account.missionProgress = state.missionProgress;
     account.lastOfflineTime = state.lastOfflineTime;
+    account.battlePower = calcBattlePower();
     await setAccount(account);
+
+    // Sync to Supabase Cloud
+    if (typeof supabaseSyncAccount === 'function') {
+      supabaseSyncAccount(account);
+    }
   }
 
   const leaderboard = await getLeaderboard();
@@ -1203,8 +1260,13 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await getAccount(id);
+  let account = await getAccount(id);
+  if (!account && typeof supabaseFetchAccount === 'function') {
+    account = await supabaseFetchAccount(id);
+    if (account) await setAccount(account);
+  }
   if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+
   const hash = await hashPassword(pw);
   if (hash !== account.passwordHash) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
@@ -1222,16 +1284,8 @@ async function handleLogin() {
   recalculateCPS();
   recalculateMultipliers();
 
-  // Process Offline Background CPS Harvest
-  const now = Date.now();
-  const lastTime = account.lastOfflineTime || now;
-  const elapsedSec = Math.floor((now - lastTime) / 1000);
-  if (elapsedSec >= 5 && state.offlineCps > 0) {
-    const reward = elapsedSec * state.offlineCps;
-    addClicks(reward);
-    showToast(`🌙 접속하지 않은 ${elapsedSec}초 동안 백그라운드 군단이 +${reward.toLocaleString()} 자금을 수확했습니다!`);
-  }
-  state.lastOfflineTime = now;
+  // Process Offline Background CPS Harvest Modal
+  checkOfflineHarvest(account.lastOfflineTime);
 
   await setSession(account.id);
   closeModal('authModal');
@@ -1254,7 +1308,10 @@ async function handleSignup() {
   if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
 
-  const existing = await getAccount(id);
+  let existing = await getAccount(id);
+  if (!existing && typeof supabaseFetchAccount === 'function') {
+    existing = await supabaseFetchAccount(id);
+  }
   if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
   const passwordHash = await hashPassword(pw);
@@ -1268,6 +1325,10 @@ async function handleSignup() {
   };
 
   await setAccount(account);
+  if (typeof supabaseSyncAccount === 'function') {
+    supabaseSyncAccount(account);
+  }
+
   state.currentUser = { id, nickname, clicks: 0 };
   state.localClicks = 0;
   await setSession(id);
@@ -1276,6 +1337,7 @@ async function handleSignup() {
   switchView('clicker');
   showToast(`환영해요, ${nickname}님! 영지가 생성됐어요.`);
 }
+
 
 async function handleLogout() {
   await flushSave();
@@ -1452,6 +1514,32 @@ function setupEventListeners() {
   document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
   document.getElementById('adminModalClose').onclick = () => closeModal('adminModal');
 
+  // Offline Harvest Claim Button
+  const offlineClaimBtn = document.getElementById('offlineClaimBtn');
+  if (offlineClaimBtn) {
+    offlineClaimBtn.onclick = () => {
+      closeModal('offlineHarvestModal');
+      if (state.currentUser) {
+        scheduleSave();
+      }
+      showToast('🏰 수확금을 수령했습니다! 통치를 계속하세요.');
+    };
+  }
+
+  // Page Visibility: harvest when user returns to tab
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.currentUser && state.lastOfflineTime) {
+      const elapsed = Math.floor((Date.now() - state.lastOfflineTime) / 1000);
+      if (elapsed >= 30) {
+        checkOfflineHarvest(state.lastOfflineTime);
+        if (state.currentUser) scheduleSave();
+      }
+    } else if (document.visibilityState === 'hidden' && state.currentUser) {
+      state.lastOfflineTime = Date.now();
+      scheduleSave();
+    }
+  });
+
   // Subscribe state changes
   subscribeState(renderActiveView);
 
@@ -1495,16 +1583,8 @@ async function init() {
       recalculateCPS();
       recalculateMultipliers();
 
-      // Process Offline Background CPS Harvest on startup
-      const now = Date.now();
-      const lastTime = account.lastOfflineTime || now;
-      const elapsedSec = Math.floor((now - lastTime) / 1000);
-      if (elapsedSec >= 5 && state.offlineCps > 0) {
-        const reward = elapsedSec * state.offlineCps;
-        addClicks(reward);
-        showToast(`🌙 접속하지 않은 ${elapsedSec}초 동안 백그라운드 군단이 +${reward.toLocaleString()} 자금을 수확했습니다!`);
-      }
-      state.lastOfflineTime = now;
+      // Process Offline Background CPS Harvest → show modal popup
+      checkOfflineHarvest(account.lastOfflineTime);
     } else {
       await clearSession();
     }
@@ -1517,7 +1597,10 @@ async function init() {
   setInterval(() => {
     if (state.cps > 0) {
       addClicks(state.cps);
-      if (state.currentUser) scheduleSave();
+      if (state.currentUser) {
+        scheduleSave();
+        state.lastOfflineTime = Date.now();
+      }
     }
   }, 1000);
 }

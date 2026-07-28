@@ -394,7 +394,27 @@
     </div>
   </div>
 
+  <!-- Offline Harvest Welcome Modal -->
+  <div class="modal-overlay" id="offlineHarvestModal" hidden>
+    <div class="modal-card" style="text-align: center;">
+      <div style="font-size: 42px; margin-bottom: 8px;">🌙</div>
+      <h3 style="margin: 0 0 8px; color: var(--gold-bright); font-size: 20px;">제국 복귀를 환영합니다!</h3>
+      <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 16px;">
+        자리를 비우신 동안 백그라운드 행정 군단이 자금을 수확했습니다.
+      </p>
+      
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--gold); border-radius: 14px; padding: 16px; margin-bottom: 18px;">
+        <div style="font-size: 12px; color: var(--parchment-dim); margin-bottom: 4px;">⏱️ 자리를 비운 시간: <span id="offlineTimeDisplay" style="color: var(--gold-bright); font-weight: 700;"></span></div>
+        <div style="font-size: 24px; font-weight: 900; color: var(--gold-bright);" id="offlineEarnedDisplay">+0 클릭</div>
+        <div style="font-size: 11px; color: var(--parchment-dim); margin-top: 4px;" id="offlineCpsRateDisplay"></div>
+      </div>
+
+      <button class="modal-submit" id="offlineClaimBtn" style="font-size: 15px; padding: 12px;">🎁 수확금 수령 및 통치 시작</button>
+    </div>
+  </div>
+
 </div>
+
 
 <script src="js/app.js"></script>
 </body>
