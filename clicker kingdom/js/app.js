@@ -1065,6 +1065,10 @@ function switchView(viewName) {
   });
 
   renderActiveView();
+
+  if (viewName === 'ranking') {
+    renderRankingView();
+  }
 }
 
 function renderActiveView() {
@@ -1084,8 +1088,6 @@ function renderActiveView() {
     renderTitlesView();
   } else if (state.currentView === 'missions') {
     renderMissionsView();
-  } else if (state.currentView === 'ranking') {
-    renderRankingView();
   }
 }
 
