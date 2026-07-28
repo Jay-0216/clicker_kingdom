@@ -520,7 +520,7 @@ function startBattle(enemyInfo) {
     battleTimeLeft--;
     document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
-    const simulatedTapRate = Math.floor(enemyInfo.power / 500) + Math.floor(Math.random() * 4);
+    const simulatedTapRate = Math.floor(3 + Math.random() * 4);
     enemyClicksInBattle += simulatedTapRate;
 
     updateFrontlineVisual();
@@ -538,13 +538,13 @@ function registerMyBattleTap() {
 }
 
 function updateFrontlineVisual() {
-  const myBp = calcBattlePower() + (myClicksInBattle * 150);
-  const enemyBp = currentEnemy.power + (enemyClicksInBattle * 150);
+  const myScore = myClicksInBattle;
+  const enemyScore = enemyClicksInBattle;
 
   let fillPercent = 50;
-  const totalPower = myBp + enemyBp;
-  if (totalPower > 0) {
-    fillPercent = Math.min(95, Math.max(5, (myBp / totalPower) * 100));
+  const totalScore = myScore + enemyScore;
+  if (totalScore > 0) {
+    fillPercent = Math.min(95, Math.max(5, (myScore / totalScore) * 100));
   }
 
   const fillEl = document.getElementById('battleFrontlineFill');
@@ -554,22 +554,19 @@ function updateFrontlineVisual() {
 function endBattle() {
   clearInterval(battleInterval);
 
-  const myTotalPower = calcBattlePower() + (myClicksInBattle * 150);
-  const enemyTotalPower = currentEnemy.power + (enemyClicksInBattle * 150);
-
-  const isWin = myTotalPower >= enemyTotalPower;
+  const isWin = myClicksInBattle >= enemyClicksInBattle;
   state.warRecords.totalBattles = (state.warRecords.totalBattles || 0) + 1;
   state.missionProgress.battleCount = (state.missionProgress.battleCount || 0) + 1;
 
   if (isWin) {
     state.warRecords.wins = (state.warRecords.wins || 0) + 1;
-    const plunder = Math.max(1000, Math.floor(currentEnemy.power * 0.5));
+    const plunder = Math.max(1000, myClicksInBattle * 100);
     state.warRecords.plunderedClicks = (state.warRecords.plunderedClicks || 0) + plunder;
     addClicks(plunder);
-    showToast(`🎉 대전 승리! 적 제국의 전선을 무너뜨리고 +${plunder.toLocaleString()} 클릭 자금을 약탈했습니다!`);
+    showToast(`🎉 대전 승리! 10초 클릭 (${myClicksInBattle}회 vs 적 ${enemyClicksInBattle}회) +${plunder.toLocaleString()} 자금 획득!`);
   } else {
     state.warRecords.losses = (state.warRecords.losses || 0) + 1;
-    showToast(`💔 아쉬운 패배... 적의 방어선에 막혔습니다.`);
+    showToast(`💔 아쉬운 패배... 10초 클릭 (${myClicksInBattle}회 vs 적 ${enemyClicksInBattle}회)`);
   }
 
   checkTitleUnlocks();
@@ -787,11 +784,97 @@ function renderAdminView() {
     if (loginForm) loginForm.hidden = true;
     if (dashboard) dashboard.hidden = false;
     loadAdminFeedbacks();
+    loadAdminUsers();
     renderCloudStatus();
   } else {
     if (loginForm) loginForm.hidden = false;
     if (dashboard) dashboard.hidden = true;
   }
+}
+
+async function loadAdminUsers() {
+  const listEl = document.getElementById('adminUserList');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color: var(--parchment-dim); font-size: 13px;">유저 목록을 불러오는 중...</div>';
+
+  let users = [];
+
+  // Try fetching from Supabase leaderboard
+  if (typeof supabaseFetchLeaderboard === 'function') {
+    const cloudUsers = await supabaseFetchLeaderboard();
+    if (cloudUsers && cloudUsers.length > 0) {
+      users = cloudUsers;
+    }
+  }
+
+  // Merge local DB accounts
+  try {
+    const db = await openDB();
+    const tx = db.transaction('accounts', 'readonly');
+    const store = tx.objectStore('accounts');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const localUsers = req.result || [];
+      localUsers.forEach(lu => {
+        if (!users.some(u => u.id === lu.id)) {
+          users.push({
+            id: lu.id,
+            nickname: lu.nickname,
+            clicks: lu.clicks || 0,
+            battlePower: lu.battlePower || 0,
+            title: lu.equippedTitle || '영주'
+          });
+        }
+      });
+      renderAdminUsersList(listEl, users);
+    };
+    req.onerror = () => {
+      renderAdminUsersList(listEl, users);
+    };
+  } catch (e) {
+    renderAdminUsersList(listEl, users);
+  }
+}
+
+function renderAdminUsersList(container, users) {
+  if (!users || users.length === 0) {
+    container.innerHTML = '<div style="color: var(--parchment-dim); font-size: 13px;">등록된 유저가 없습니다.</div>';
+    return;
+  }
+
+  container.innerHTML = users.map(u => `
+    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <div style="font-size: 13px; font-weight: 700; color: var(--gold-bright);">${escapeHtml(u.nickname || u.id)} <span style="font-size: 11px; color: var(--parchment-dim);">(ID: ${escapeHtml(u.id)})</span></div>
+        <div style="font-size: 11px; color: var(--parchment-dim);">자금: ${(u.clicks || 0).toLocaleString()} | 전투력: ${(u.battlePower || 0).toLocaleString()}</div>
+      </div>
+      <button class="buy-btn" data-admin-select-user="${escapeHtml(u.id)}" style="font-size: 11px; padding: 4px 10px;">관리</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-admin-select-user]').forEach(btn => {
+    btn.onclick = () => {
+      const userId = btn.getAttribute('data-admin-select-user');
+      openAdminUserDetail(userId);
+    };
+  });
+}
+
+async function openAdminUserDetail(userId) {
+  const detailEl = document.getElementById('adminUserDetail');
+  const nameEl = document.getElementById('adminDetailName');
+  if (!detailEl || !nameEl) return;
+
+  const account = await loadPreferredAccount(userId);
+  if (!account) {
+    showToast('유저 정보를 불러올 수 없습니다.');
+    return;
+  }
+
+  nameEl.textContent = `${account.nickname} (${account.id})`;
+  const inputEl = document.getElementById('adminUserClickInput');
+  if (inputEl) inputEl.value = account.clicks || 0;
+  detailEl.hidden = false;
 }
 
 function handleAdminCustomClickSet() {
@@ -1958,6 +2041,8 @@ function setupEventListeners() {
   document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
   document.getElementById('adminCheat10M').onclick = () => giveAdminGold(10000000);
   document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
+  const adminLoadUsersBtn = document.getElementById('adminLoadUsers');
+  if (adminLoadUsersBtn) adminLoadUsersBtn.onclick = loadAdminUsers;
 
   // Offline Harvest Claim Button
   const offlineClaimBtn = document.getElementById('offlineClaimBtn');
