@@ -802,15 +802,6 @@ let adminAllUsers = [];
 let adminSelectedUserId = null;
 
 function handleAdminLogin() {
-  const pw = document.getElementById('adminPwInput').value;
-  const errEl = document.getElementById('adminLoginError');
-  errEl.textContent = '';
-
-  if (pw !== ADMIN_PASSWORD) {
-    errEl.textContent = '비밀번호가 올바르지 않습니다.';
-    return;
-  }
-
   document.getElementById('adminLoginForm').hidden = true;
   document.getElementById('adminDashboardContent').hidden = false;
   loadAdminFeedbacks();
