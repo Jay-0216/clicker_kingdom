@@ -931,6 +931,10 @@ function renderProfileView() {
     return;
   }
 
+  const unlockedTitles = state.unlockedTitles || ['title_novice'];
+  const userEffects = state.effects || [];
+  const warRecords = state.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
+
   const avatarDisplay = document.getElementById('profileAvatarDisplay');
   const avatarPicker = document.getElementById('avatarPickerContainer');
   const idInput = document.getElementById('profileIdInput');
@@ -940,8 +944,8 @@ function renderProfileView() {
   const statsGrid = document.getElementById('profileStatsGrid');
 
   if (avatarDisplay) avatarDisplay.textContent = state.avatar || '👑';
-  if (idInput) idInput.value = state.currentUser.id;
-  if (nickInput && document.activeElement !== nickInput) nickInput.value = state.currentUser.nickname;
+  if (idInput) idInput.value = state.currentUser.id || '';
+  if (nickInput && document.activeElement !== nickInput) nickInput.value = state.currentUser.nickname || '';
 
   // Render Avatar Options
   if (avatarPicker) {
@@ -987,7 +991,7 @@ function renderProfileView() {
   // Render Titles in Profile
   if (titlesList) {
     titlesList.innerHTML = UNLOCKABLE_TITLES.map(t => {
-      const isUnlocked = state.unlockedTitles.includes(t.id);
+      const isUnlocked = unlockedTitles.includes(t.id);
       const isEquipped = state.equippedTitle === t.id;
       return `
         <div class="title-card ${isEquipped ? 'equipped' : ''}" style="padding: 12px;">
@@ -1011,7 +1015,7 @@ function renderProfileView() {
   // Render Visual Effects in Profile
   if (effectsList) {
     effectsList.innerHTML = VISUAL_EFFECTS.map(eff => {
-      const owned = state.effects.includes(eff.id);
+      const owned = userEffects.includes(eff.id);
       const isEquipped = state.equippedEffect === eff.id;
       return `
         <div class="item-card" style="padding: 10px 14px;">
@@ -1041,8 +1045,8 @@ function renderProfileView() {
   if (statsGrid) {
     const clicks = getClicks();
     const bp = calcBattlePower();
-    const wins = state.warRecords.wins || 0;
-    const losses = state.warRecords.losses || 0;
+    const wins = warRecords.wins || 0;
+    const losses = warRecords.losses || 0;
 
     statsGrid.innerHTML = `
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
@@ -1051,11 +1055,11 @@ function renderProfileView() {
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">자동 수확 (CPS)</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${state.cps.toLocaleString()} /초</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${(state.cps || 0).toLocaleString()} /초</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">백그라운드 CPS</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${state.offlineCps.toLocaleString()} /초</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${(state.offlineCps || 0).toLocaleString()} /초</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">종합 전투력</div>
@@ -1075,7 +1079,7 @@ function renderProfileView() {
   }
 
   // Admin section — shown only for jay0216
-  const isJay = state.currentUser && state.currentUser.nickname === 'jay0216';
+  const isJay = state.currentUser && (state.currentUser.nickname === 'jay0216' || state.currentUser.id === 'jay0216');
   const profileAdminSection = document.getElementById('profileAdminSection');
   if (profileAdminSection) {
     if (isJay) {
@@ -1918,7 +1922,15 @@ function setupEventListeners() {
   const battleTapBtn = document.getElementById('battleTapBtn');
   if (battleTapBtn) battleTapBtn.addEventListener('pointerdown', registerMyBattleTap);
 
-  // Ranking Tabs
+  // Ranking Tabs & Refresh
+  const rankingRefreshBtn = document.getElementById('rankingRefreshBtn');
+  if (rankingRefreshBtn) {
+    rankingRefreshBtn.onclick = () => {
+      renderRankingView(true);
+      showToast('🔄 랭킹 정보를 새로고침했습니다.');
+    };
+  }
+
   document.querySelectorAll('[data-rank-tab]').forEach(btn => {
     btn.onclick = () => {
       document.querySelectorAll('[data-rank-tab]').forEach(b => b.classList.remove('active'));
