@@ -367,6 +367,18 @@
         <!-- Statistics Overview -->
         <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">📊 통치 기록 요약</h4>
         <div id="profileStatsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; text-align: center;"></div>
+
+        <!-- Logout Button -->
+        <div style="text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid rgba(212,175,55,0.2);">
+          <button class="buy-btn" id="profileLogoutBtn" style="background: rgba(180,40,40,0.25); border-color: rgba(200,60,60,0.5); color: #ff8080;">🚪 로그아웃</button>
+        </div>
+      </div>
+
+      <!-- Admin Section (jay0216 only) -->
+      <div id="profileAdminSection" class="admin-card" hidden style="margin-top: 16px; border: 1px solid rgba(212,175,55,0.5);">
+        <h4 style="color: var(--gold-bright); margin: 0 0 12px;">⚙️ 관리자 패널</h4>
+        <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 14px;">관리자 전용 메뉴입니다.</p>
+        <button class="buy-btn" id="profileGoAdminBtn">⚙️ 관리자 페이지 이동</button>
       </div>
     </section>
 

@@ -20,8 +20,8 @@ const ARMY_ITEMS = [
 
 const MULTIPLIER_RELICS = [
   { id: 'commander_banner', name: "지휘관의 영주 깃발", icon: '🚩', cost: 100, addClick: 1, mult: 1, desc: '클릭당 자금 +1 추가' },
-  { id: 'runed_sword', name: "왕국 기사의 명검", icon: '🗡️', cost: 500, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 증가' },
-  { id: 'sovereign_seal', name: "제왕의 옥새", icon: '👑', cost: 10000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 추가 증폭' },
+  { id: 'runed_sword', name: "왕국 기사의 명검", icon: '🗡️', cost: 500, addClick: 2, mult: 1, desc: '클릭당 자금 +2 추가' },
+  { id: 'sovereign_seal', name: "제왕의 옥새", icon: '👑', cost: 10000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 증폭' },
   { id: 'thunder_throne', name: "제국의 천둥 옥좌", icon: '⚡', cost: 250000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 추가 증폭' },
   { id: 'celestial_crown', name: "천상의 정복자 왕관", icon: '🌟', cost: 5000000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 추가 증폭' }
 ];
@@ -900,6 +900,8 @@ function renderActiveView() {
   if (userChip && state.currentUser) {
     const avatar = state.avatar || '👑';
     userChip.textContent = `${avatar} ${state.currentUser.nickname}`;
+    // Re-bind onclick in case textContent update broke it
+    userChip.onclick = () => switchView('profile');
   }
 
   if (state.currentView === 'clicker') {
@@ -1064,6 +1066,32 @@ function renderProfileView() {
         <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">${wins}승 ${losses}패</div>
       </div>
     `;
+  }
+
+  // Logout button inside profile page
+  const profileLogoutBtn = document.getElementById('profileLogoutBtn');
+  if (profileLogoutBtn) {
+    profileLogoutBtn.onclick = handleLogout;
+  }
+
+  // Admin section — shown only for jay0216
+  const isJay = state.currentUser && state.currentUser.nickname === 'jay0216';
+  const profileAdminSection = document.getElementById('profileAdminSection');
+  if (profileAdminSection) {
+    if (isJay) {
+      profileAdminSection.hidden = false;
+      const goAdminBtn = document.getElementById('profileGoAdminBtn');
+      if (goAdminBtn) {
+        goAdminBtn.onclick = () => {
+          state.isAdmin = true;
+          const adminNavBtn = document.getElementById('adminNavBtn');
+          if (adminNavBtn) adminNavBtn.hidden = false;
+          switchView('admin');
+        };
+      }
+    } else {
+      profileAdminSection.hidden = true;
+    }
   }
 }
 
@@ -1541,25 +1569,17 @@ function handleSealClick(e) {
 function renderTopbarActions() {
   const actions = document.getElementById('topbarActions');
   if (!actions) return;
-  const cloudState = getCloudStateSnapshot();
-  const badgeLabel = `☁ ${cloudState.tone === 'success' ? '정상' : cloudState.tone === 'syncing' ? '저장 중' : cloudState.tone === 'warning' ? '부분 오류' : cloudState.tone === 'error' ? '문제' : '대기 중'}`;
 
   if (state.currentUser) {
     const avatar = state.avatar || '👑';
     actions.innerHTML = `
-      <button class="text-btn cloud-mini-badge" id="cloudMiniBadge" title="${escapeHtml(cloudState.summary)}">${badgeLabel}</button>
       <button class="user-chip" id="userChip" title="프로필 관리">${avatar} ${escapeHtml(state.currentUser.nickname)}</button>
-      <button class="text-btn" id="logoutBtn">로그아웃</button>
     `;
-    document.getElementById('cloudMiniBadge').onclick = handleCloudRefresh;
     document.getElementById('userChip').onclick = () => switchView('profile');
-    document.getElementById('logoutBtn').onclick = handleLogout;
   } else {
     actions.innerHTML = `
-      <button class="text-btn cloud-mini-badge" id="cloudMiniBadge" title="${escapeHtml(cloudState.summary)}">${badgeLabel}</button>
       <button class="login-btn" id="loginBtn">로그인</button>
     `;
-    document.getElementById('cloudMiniBadge').onclick = handleCloudRefresh;
     document.getElementById('loginBtn').onclick = () => openModal('authModal');
   }
 }
