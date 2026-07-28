@@ -602,6 +602,35 @@ textarea:focus-visible {
 
 [hidden] { display: none !important; }
 
+/* Glitch Animation Effects for Infinite / Beyond Max Tier */
+@keyframes glitchTextAnim {
+  0% { transform: translate(0); text-shadow: -2px 0 #ff0055, 2px 0 #00ffff; }
+  20% { transform: translate(-3px, 2px); text-shadow: 2px -2px #ff0055, -2px 2px #00ffff; }
+  40% { transform: translate(-1px, -2px); text-shadow: -2px 2px #ff0055, 2px -2px #00ffff; }
+  60% { transform: translate(3px, 1px); text-shadow: 2px 0 #ff0055, -2px 0 #00ffff; }
+  80% { transform: translate(1px, -1px); text-shadow: -1px -2px #ff0055, 1px 2px #00ffff; }
+  100% { transform: translate(0); text-shadow: -2px 0 #ff0055, 2px 0 #00ffff; }
+}
+
+@keyframes glitchSealAnim {
+  0% { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg) contrast(1.5); }
+  20% { transform: scale(1.03) rotate(2deg); filter: hue-rotate(90deg) contrast(2); }
+  40% { transform: scale(0.97) rotate(-2deg); filter: hue-rotate(180deg) contrast(2.5); }
+  60% { transform: scale(1.02) rotate(1deg); filter: hue-rotate(270deg) contrast(2); }
+  80% { transform: scale(0.98) rotate(-1deg); filter: hue-rotate(360deg) contrast(1.5); }
+  100% { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg) contrast(1.5); }
+}
+
+.glitch-text, .glitch-number {
+  animation: glitchTextAnim 0.3s infinite linear alternate-reverse;
+  color: #ff0055 !important;
+  font-family: monospace;
+}
+
+.glitch-seal {
+  animation: glitchSealAnim 0.25s infinite ease-in-out alternate !important;
+}
+
 @media (max-width: 640px) {
   .logo-text { display: none; }
   .nav-tab-btn { font-size: 11px; padding: 4px 7px; }

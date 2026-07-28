@@ -48,13 +48,15 @@ const KINGDOM_TIERS = [
   { clicks: 100000, name: '황금 왕국', title: '제국 황제', core1: '#856a28', core2: '#473812', borderW: '5px', borderC: '#f1ce6b', gems: 4, crown: true, glow: 0.85 },
   { clicks: 1000000, name: '천상 제국', title: '천상 패왕', core1: '#4d2b7a', core2: '#281442', borderW: '6px', borderC: '#c48ef5', gems: 4, crown: true, glow: 1.0 }
 ];
+const MAX_TIER_CLICKS = 5000000; // 천상 제국 초월 기준
 
 const UNLOCKABLE_TITLES = [
   { id: 'title_novice', name: '초보 영주', req: '기본 지급', desc: '왕국을 건국한 영주' },
   { id: 'title_victor', name: '백전백승의 챔피언', req: '대전 5승 달성', desc: '전장에서 승리를 거둔 명장' },
   { id: 'title_raider', name: '전설의 약탈자', req: '약탈 10,000 클릭', desc: '적의 자금을 휩수한 약탈자' },
   { id: 'title_bulwark', name: '불굴의 기사단장', req: '전투력 10,000 이상', desc: '강력한 제국 군대를 거느린 자' },
-  { id: 'title_visionary', name: '제국의 선지자', req: '제보/아이디어 작성', desc: '제국 발전에 기여한 지혜로운 통치자' }
+  { id: 'title_visionary', name: '제국의 선지자', req: '제보/아이디어 작성', desc: '제국 발전에 기여한 지혜로운 통치자' },
+  { id: 'title_god', name: '신', req: '천상 제국 초월', desc: '천상의 영역을 넘어선 존재' }
 ];
 
 const DAILY_MISSIONS = [
@@ -438,6 +440,9 @@ function getTierInfo(clicks) {
       break;
     }
   }
+  if (clicks >= MAX_TIER_CLICKS) {
+    active = { ...active, beyondMax: true };
+  }
   return active;
 }
 
@@ -493,13 +498,19 @@ let enemyClicksInBattle = 0;
 let currentEnemy = null;
 let myGeneratedRoomCode = null;
 
+let activeRoomCode = null;
+let currentRoomRole = null; // 'host' or 'guest' or null (AI)
+let roomWaitingPollInterval = null;
+
 function generateRoomCode() {
   myGeneratedRoomCode = String(Math.floor(1000 + Math.random() * 9000));
   return myGeneratedRoomCode;
 }
 
-function startBattle(enemyInfo) {
+function startBattle(enemyInfo, roomCode = null, role = null) {
   currentEnemy = enemyInfo;
+  activeRoomCode = roomCode;
+  currentRoomRole = role;
   myClicksInBattle = 0;
   enemyClicksInBattle = 0;
   battleTimeLeft = 10;
@@ -515,12 +526,24 @@ function startBattle(enemyInfo) {
   updateFrontlineVisual();
 
   if (battleInterval) clearInterval(battleInterval);
-  battleInterval = setInterval(() => {
+  battleInterval = setInterval(async () => {
     battleTimeLeft--;
     document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
-    const simulatedTapRate = Math.floor(3 + Math.random() * 4);
-    enemyClicksInBattle += simulatedTapRate;
+    // Real-time synchronization for room battles via Supabase
+    if (activeRoomCode && typeof supabaseFetchRoom === 'function' && typeof supabaseSubmitBattleTaps === 'function') {
+      // Sync my taps to Cloud
+      await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+      // Fetch opponent's taps from Cloud
+      const r = await supabaseFetchRoom(activeRoomCode);
+      if (r) {
+        enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
+      }
+    } else {
+      // Simulated AI enemy taps
+      const simulatedTapRate = Math.floor(3 + Math.random() * 4);
+      enemyClicksInBattle += simulatedTapRate;
+    }
 
     updateFrontlineVisual();
 
@@ -534,6 +557,11 @@ function registerMyBattleTap() {
   if (battleTimeLeft <= 0) return;
   myClicksInBattle += 1;
   updateFrontlineVisual();
+
+  // Instantly send tap count to room
+  if (activeRoomCode && typeof supabaseSubmitBattleTaps === 'function') {
+    supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+  }
 }
 
 function updateFrontlineVisual() {
@@ -570,6 +598,9 @@ function endBattle() {
 
   checkTitleUnlocks();
   notifyStateChange();
+
+  activeRoomCode = null;
+  currentRoomRole = null;
 
   setTimeout(() => {
     document.getElementById('battleSetupPanel').hidden = false;
@@ -706,12 +737,24 @@ function _renderRankingList(listEl, leaderboard) {
     if (currentRankTab === 'clicks') scoreDisplay = `${(entry.clicks || 0).toLocaleString()} 클릭`;
     else if (currentRankTab === 'power') scoreDisplay = `⚔️ ${(entry.battlePower || 0).toLocaleString()}`;
     else if (currentRankTab === 'honor') scoreDisplay = `🏆 ${entry.wins || 0}승`;
+    
+    // Resolve title name if raw ID is given or missing
+    let displayTitle = entry.title || '칭호 없음';
+    if (displayTitle.startsWith('title_')) {
+      const tObj = UNLOCKABLE_TITLES.find(t => t.id === displayTitle);
+      displayTitle = tObj ? tObj.name : '칭호 없음';
+    }
+
+    const tierInfo = getTierInfo(entry.clicks || 0);
+    const tierDisplay = entry.tierName || (tierInfo.beyondMax ? '???' : tierInfo.name);
+
     return `
       <div class="ranking-row ${isMe ? 'me' : ''}">
         <span class="rank-badge ${rank <= 3 ? 'top' + rank : ''}">${crownGlyph(rank)}</span>
         <div class="rank-nickname">
           <span>${escapeHtml(entry.nickname || '무명 영주')}</span>
-          <span class="rank-title-chip">${escapeHtml(entry.title || '성주')}</span>
+          <span class="rank-title-chip">${escapeHtml(displayTitle)}</span>
+          <span style="font-size:11px; opacity:0.65; margin-left:6px; color: var(--gold-bright);">${escapeHtml(tierDisplay)}</span>
         </div>
         <span class="rank-score">${scoreDisplay}</span>
       </div>
@@ -1181,34 +1224,89 @@ function renderProfileView() {
   }
 }
 
+let glitchTimer = null;
+let glitchStateToggle = false;
+
 function renderClickerView(clicks, tier) {
-  document.getElementById('clickCount').textContent = clicks.toLocaleString();
-  document.getElementById('tierLabel').textContent = tier.name;
+  const clickCountEl = document.getElementById('clickCount');
+  const tierLabelEl = document.getElementById('tierLabel');
+  const titleBadgeEl = document.getElementById('currentTitleBadge');
+  const sealBtn = document.getElementById('sealBtn');
+
+  if (tier.beyondMax) {
+    // Unlock '신' title on achieving max tier
+    if (state.currentUser && !(state.unlockedTitles || []).includes('title_god')) {
+      state.unlockedTitles = state.unlockedTitles || [];
+      state.unlockedTitles.push('title_god');
+      showToast('⚡ [신] 칭호를 획득했습니다! 천상의 영역을 초월했습니다.');
+    }
+
+    clickCountEl.classList.add('glitch-number');
+    tierLabelEl.classList.add('glitch-text');
+    if (titleBadgeEl) titleBadgeEl.classList.add('glitch-text');
+    if (sealBtn) sealBtn.classList.add('glitch-seal');
+
+    tierLabelEl.textContent = '???';
+
+    // Glitch toggle between numbers and Infinity symbol
+    if (!glitchTimer) {
+      glitchTimer = setInterval(() => {
+        glitchStateToggle = !glitchStateToggle;
+        const currentVal = getClicks();
+        const el = document.getElementById('clickCount');
+        if (el) {
+          if (glitchStateToggle) {
+            el.textContent = '∞ (무한)';
+          } else {
+            el.textContent = currentVal.toLocaleString();
+          }
+        }
+      }, 700);
+    }
+  } else {
+    if (glitchTimer) {
+      clearInterval(glitchTimer);
+      glitchTimer = null;
+    }
+    clickCountEl.classList.remove('glitch-number');
+    tierLabelEl.classList.remove('glitch-text');
+    if (titleBadgeEl) titleBadgeEl.classList.remove('glitch-text');
+    if (sealBtn) sealBtn.classList.remove('glitch-seal');
+    tierLabelEl.textContent = tier.name;
+    clickCountEl.textContent = clicks.toLocaleString();
+  }
+
   document.getElementById('cpsLabel').textContent = `자동 수확: +${state.cps.toLocaleString()} /초 | 🌙 백그라운드: +${state.offlineCps.toLocaleString()} /초`;
   document.getElementById('guestBanner').hidden = !!state.currentUser;
 
   const tObj = UNLOCKABLE_TITLES.find(t => t.id === state.equippedTitle);
-  document.getElementById('currentTitleBadge').textContent = `👑 [${state.currentUser ? (tObj ? tObj.name : tier.title) : '로그인 필요'}]`;
-
-  const sealBtn = document.getElementById('sealBtn');
-  sealBtn.style.setProperty('--core1', tier.core1);
-  sealBtn.style.setProperty('--core2', tier.core2);
-  sealBtn.style.setProperty('--border-w', tier.borderW);
-  sealBtn.style.setProperty('--border-c', tier.borderC);
-  sealBtn.style.setProperty('--glow', tier.glow);
-
-  // Apply equipped visual effect aura class
-  sealBtn.className = 'seal-btn' + (state.equippedEffect ? ` ${state.equippedEffect}` : '');
-
-  const crown = document.getElementById('sealCrown');
-  crown.classList.toggle('visible', tier.crown);
-
-  const gems = document.getElementById('sealGems').children;
-  for (let i = 0; i < gems.length; i++) {
-    gems[i].classList.toggle('visible', i < tier.gems);
+  const titleLabel = state.currentUser ? (tObj ? tObj.name : '칭호 없음') : '로그인 필요';
+  if (titleBadgeEl) {
+    titleBadgeEl.textContent = tier.beyondMax ? `⚡ [${titleLabel}]` : `👑 [${titleLabel}]`;
   }
 
-  // Render ALL affordable Quick Upgrades under Clicker
+  if (sealBtn) {
+    sealBtn.style.setProperty('--core1', tier.core1);
+    sealBtn.style.setProperty('--core2', tier.core2);
+    sealBtn.style.setProperty('--border-w', tier.borderW);
+    sealBtn.style.setProperty('--border-c', tier.borderC);
+    sealBtn.style.setProperty('--glow', tier.glow);
+    let sealClass = 'seal-btn';
+    if (state.equippedEffect) sealClass += ` ${state.equippedEffect}`;
+    if (tier.beyondMax) sealClass += ' glitch-seal';
+    sealBtn.className = sealClass;
+  }
+
+  const crown = document.getElementById('sealCrown');
+  if (crown) crown.classList.toggle('visible', tier.crown);
+
+  const gems = document.getElementById('sealGems');
+  if (gems) {
+    for (let i = 0; i < gems.children.length; i++) {
+      gems.children[i].classList.toggle('visible', i < tier.gems);
+    }
+  }
+
   renderQuickUpgrades(clicks);
 }
 
@@ -1435,7 +1533,15 @@ function renderTitlesView() {
     return;
   }
 
-  container.innerHTML = UNLOCKABLE_TITLES.map(t => {
+  // Filter out hidden secret titles (like 'title_god') until unlocked
+  const visibleTitles = UNLOCKABLE_TITLES.filter(t => {
+    if (t.id === 'title_god') {
+      return state.unlockedTitles.includes('title_god');
+    }
+    return true;
+  });
+
+  container.innerHTML = visibleTitles.map(t => {
     const isUnlocked = state.unlockedTitles.includes(t.id);
     const isEquipped = state.equippedTitle === t.id;
     return `
@@ -1939,7 +2045,22 @@ function setupEventListeners() {
           cps: state.cps
         });
         if (ok) {
-          showToast(`🔑 룸 코드 [${code}] 생성 완료! 친구에게 알려주세요. (1시간 유효)`);
+          showToast(`🔑 룸 코드 [${code}] 생성 완료! 친구 입장을 기다리는 중...`);
+          
+          // Poll for guest arrival
+          if (roomWaitingPollInterval) clearInterval(roomWaitingPollInterval);
+          roomWaitingPollInterval = setInterval(async () => {
+            const r = await supabaseFetchRoom(code);
+            if (r && r.status === 'matched') {
+              clearInterval(roomWaitingPollInterval);
+              roomWaitingPollInterval = null;
+              showToast(`⚔️ [${r.guestNickname || '친구'}]님 입장 완료! 대전을 시작합니다!`);
+              startBattle({
+                name: `👑 ${r.guestNickname || '친구 영주'}의 군대`,
+                power: Math.max(1000, state.cps * 8)
+              }, code, 'host');
+            }
+          }, 2000);
         } else {
           showToast(`🔑 룸 코드 [${code}] 생성 완료! (오프라인 모드)`);
         }
@@ -1972,7 +2093,6 @@ function setupEventListeners() {
       showToast('🔍 친구의 룸을 탐색 중...');
 
       // Try to fetch real room data from Supabase
-      let enemyInfo = null;
       if (typeof supabaseFetchRoom === 'function') {
         const room = await supabaseFetchRoom(inputCode);
         if (room) {
@@ -1980,24 +2100,33 @@ function setupEventListeners() {
             showToast('⚠️ 자신의 룸 코드는 입력할 수 없습니다!');
             return;
           }
-          enemyInfo = {
+
+          // Mark room as joined in Supabase
+          if (typeof supabaseJoinRoom === 'function') {
+            await supabaseJoinRoom(inputCode, {
+              id: state.currentUser.id,
+              nickname: state.currentUser.nickname
+            });
+          }
+
+          const enemyInfo = {
             name: `👑 ${room.hostNickname || '친구 영주'}의 군대`,
             power: room.hostPower || Math.max(1200, state.cps * 7 + 800)
           };
-          showToast(`⚔️ ${room.hostNickname || '친구 영주'}와의 대전을 시작합니다!`);
+          showToast(`⚔️ ${room.hostNickname || '친구 영주'} 룸 입장! 대전을 시작합니다!`);
+          startBattle(enemyInfo, inputCode, 'guest');
         } else {
           showToast('❌ 룸 코드를 찾을 수 없습니다. 코드를 확인해 주세요.');
           return;
         }
       } else {
         // Offline fallback
-        enemyInfo = {
+        const enemyInfo = {
           name: `[룸 ${inputCode}] 친구 영주의 군대`,
           power: Math.max(1200, state.cps * 7 + 800)
         };
+        startBattle(enemyInfo);
       }
-
-      startBattle(enemyInfo);
     };
   }
 
@@ -2146,9 +2275,209 @@ async function init() {
   }, 1000);
 }
 
+// ---------- 10. Space Cannon Shooter Mini-Game ----------
+let shooterAnimFrame = null;
+let shooterActive = false;
+let shooterScore = 0;
+let shooterReward = 0;
+let shooterHp = 3;
+
+const shooterPlayer = { x: 300, y: 360, width: 40, height: 25, speed: 6, dx: 0 };
+let shooterBullets = [];
+let shooterEnemies = [];
+let shooterLastShot = 0;
+
+function initShooterGame() {
+  const overlay = document.getElementById('shooterOverlay');
+  if (overlay) overlay.hidden = true;
+
+  shooterActive = true;
+  shooterScore = 0;
+  shooterReward = 0;
+  shooterHp = 3;
+  shooterPlayer.x = 280;
+  shooterBullets = [];
+  shooterEnemies = [];
+  shooterLastShot = 0;
+
+  updateShooterHud();
+
+  const canvas = document.getElementById('shooterCanvas');
+  if (!canvas) return;
+
+  // Controls: Mouse Movement / Touch
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    shooterPlayer.x = (e.clientX - rect.left) * scaleX - shooterPlayer.width / 2;
+    shooterPlayer.x = Math.max(0, Math.min(canvas.width - shooterPlayer.width, shooterPlayer.x));
+  };
+
+  canvas.ontouchmove = (e) => {
+    if (e.touches.length > 0) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      shooterPlayer.x = (e.touches[0].clientX - rect.left) * scaleX - shooterPlayer.width / 2;
+      shooterPlayer.x = Math.max(0, Math.min(canvas.width - shooterPlayer.width, shooterPlayer.x));
+    }
+  };
+
+  // Keyboard controls
+  window.onkeydown = (e) => {
+    if (state.currentView !== 'shooter') return;
+    if (e.key === 'ArrowLeft' || e.key === 'a') shooterPlayer.dx = -shooterPlayer.speed;
+    if (e.key === 'ArrowRight' || e.key === 'd') shooterPlayer.dx = shooterPlayer.speed;
+  };
+  window.onkeyup = (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ArrowRight' || e.key === 'd') shooterPlayer.dx = 0;
+  };
+
+  if (shooterAnimFrame) cancelAnimationFrame(shooterAnimFrame);
+  shooterLoop();
+}
+
+function updateShooterHud() {
+  const sScore = document.getElementById('shooterScore');
+  const sReward = document.getElementById('shooterReward');
+  const sHp = document.getElementById('shooterHp');
+  if (sScore) sScore.textContent = shooterScore.toLocaleString();
+  if (sReward) sReward.textContent = shooterReward.toLocaleString();
+  if (sHp) sHp.textContent = '❤️'.repeat(Math.max(0, shooterHp)) || '💀';
+}
+
+function shooterLoop() {
+  if (!shooterActive) return;
+
+  const canvas = document.getElementById('shooterCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Clear Background
+  ctx.fillStyle = '#0b0c1b';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw Stars Background
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  for (let i = 0; i < 20; i++) {
+    const rx = (Math.sin(i * 99 + Date.now() * 0.001) * 0.5 + 0.5) * canvas.width;
+    const ry = ((i * 30 + Date.now() * 0.05) % canvas.height);
+    ctx.fillRect(rx, ry, 2, 2);
+  }
+
+  // Update Player Position via Keyboard
+  shooterPlayer.x += shooterPlayer.dx;
+  shooterPlayer.x = Math.max(0, Math.min(canvas.width - shooterPlayer.width, shooterPlayer.x));
+
+  // Draw Player Cannon/Ship
+  ctx.fillStyle = '#f1ce6b';
+  ctx.fillRect(shooterPlayer.x + 15, shooterPlayer.y - 10, 10, 10); // Cannon Barrel
+  ctx.fillStyle = '#d4af37';
+  ctx.fillRect(shooterPlayer.x, shooterPlayer.y, shooterPlayer.width, shooterPlayer.height); // Ship Body
+  ctx.fillStyle = '#ff8b8b';
+  ctx.fillRect(shooterPlayer.x + 5, shooterPlayer.y + 5, 8, 12);
+  ctx.fillRect(shooterPlayer.x + 27, shooterPlayer.y + 5, 8, 12);
+
+  // Auto Cannon Firing (Every 180ms)
+  const now = Date.now();
+  if (now - shooterLastShot > 180) {
+    shooterBullets.push({ x: shooterPlayer.x + 18, y: shooterPlayer.y - 10, radius: 4, speed: 8 });
+    shooterLastShot = now;
+  }
+
+  // Update & Draw Cannon Bullets
+  ctx.fillStyle = '#00ffff';
+  for (let i = shooterBullets.length - 1; i >= 0; i--) {
+    const b = shooterBullets[i];
+    b.y -= b.speed;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (b.y < -10) {
+      shooterBullets.splice(i, 1);
+    }
+  }
+
+  // Spawn Invading Enemies
+  if (Math.random() < 0.04) {
+    const icons = ['🛸', '👾', '☄️', '🤖'];
+    const icon = icons[Math.floor(Math.random() * icons.length)];
+    shooterEnemies.push({
+      x: Math.random() * (canvas.width - 30),
+      y: -30,
+      size: 28,
+      speed: 1.5 + Math.random() * 2,
+      hp: 1,
+      icon: icon
+    });
+  }
+
+  // Update & Draw Enemies
+  ctx.font = '22px sans-serif';
+  for (let eIdx = shooterEnemies.length - 1; eIdx >= 0; eIdx--) {
+    const enemy = shooterEnemies[eIdx];
+    enemy.y += enemy.speed;
+
+    ctx.fillText(enemy.icon, enemy.x, enemy.y);
+
+    // Collision Check: Bullet hitting Enemy
+    for (let bIdx = shooterBullets.length - 1; bIdx >= 0; bIdx--) {
+      const b = shooterBullets[bIdx];
+      const dist = Math.hypot(b.x - (enemy.x + 14), b.y - (enemy.y - 10));
+      if (dist < 20) {
+        // Hit enemy!
+        shooterBullets.splice(bIdx, 1);
+        shooterEnemies.splice(eIdx, 1);
+
+        shooterScore += 10;
+        const rewardEarned = Math.max(50, Math.floor((state.cps || 10) * 1.5));
+        shooterReward += rewardEarned;
+        addClicks(rewardEarned);
+
+        updateShooterHud();
+        break;
+      }
+    }
+
+    // Check if Enemy Reached Bottom / Hit Player
+    if (enemy.y > canvas.height - 20) {
+      shooterEnemies.splice(eIdx, 1);
+      shooterHp -= 1;
+      updateShooterHud();
+
+      if (shooterHp <= 0) {
+        endShooterGame();
+        return;
+      }
+    }
+  }
+
+  shooterAnimFrame = requestAnimationFrame(shooterLoop);
+}
+
+function endShooterGame() {
+  shooterActive = false;
+  if (shooterAnimFrame) cancelAnimationFrame(shooterAnimFrame);
+
+  showToast(`💥 게임 오버! 점수: ${shooterScore.toLocaleString()}점 | 전리품 +${shooterReward.toLocaleString()} 클릭 획득!`);
+
+  const overlay = document.getElementById('shooterOverlay');
+  if (overlay) {
+    overlay.hidden = false;
+    overlay.querySelector('h3').textContent = '💥 디펜스 슈터 게임 오버';
+    overlay.querySelector('p').innerHTML = `최종 점수: <b>${shooterScore.toLocaleString()}점</b><br>획득 자금: <b>+${shooterReward.toLocaleString()} 클릭</b>`;
+  }
+}
+
 // Execute initialization when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    init();
+    const startShooterBtn = document.getElementById('startShooterBtn');
+    if (startShooterBtn) startShooterBtn.onclick = initShooterGame;
+  });
 } else {
   init();
+  const startShooterBtn = document.getElementById('startShooterBtn');
+  if (startShooterBtn) startShooterBtn.onclick = initShooterGame;
 }

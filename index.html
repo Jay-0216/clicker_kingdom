@@ -30,11 +30,11 @@
         <button class="nav-tab-btn" data-nav-view="clicker" data-view="clicker"><span class="topbar-icon">🏰</span> 클릭</button>
         <button class="nav-tab-btn" data-nav-view="shop" data-view="shop"><span class="topbar-icon">⚔️</span> 군대 상점</button>
         <button class="nav-tab-btn" data-nav-view="battle" data-view="battle"><span class="topbar-icon">🛡️</span> 대전</button>
+        <button class="nav-tab-btn" data-nav-view="shooter" data-view="shooter"><span class="topbar-icon">🚀</span> 포탄 슈팅</button>
         <button class="nav-tab-btn" data-nav-view="ranking" data-view="ranking"><span class="topbar-icon">🏆</span> 랭킹</button>
         <button class="nav-tab-btn" data-nav-view="titles" data-view="titles"><span class="topbar-icon">👑</span> 칭호</button>
         <button class="nav-tab-btn" data-nav-view="missions" data-view="missions"><span class="topbar-icon">📜</span> 미션</button>
         <button class="nav-tab-btn" id="feedbackNavBtn"><span class="topbar-icon">💡</span> 제보</button>
-        <button class="nav-tab-btn" data-nav-view="admin" id="adminNavBtn" hidden><span class="topbar-icon">⚙️</span> 관리자</button>
       </nav>
 
       <div class="topbar-actions" id="topbarActions"></div>
@@ -198,6 +198,34 @@
         </div>
 
         <button class="battle-tap-btn" id="battleTapBtn">🔥 폭풍 연타로 전선 밀어내기!</button>
+      </div>
+    </section>
+
+    <!-- 4.5. Space Cannon Shooter Mini-Game View -->
+    <section id="shooterView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🚀 군대 포탄 디펜스 슈팅</h2>
+      </div>
+
+      <div class="shop-card" style="text-align: center;">
+        <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 10px;">
+          내 군대의 원거리 포대에서 계속 포탄이 발사됩니다! 방향키/마우스/터치로 적 침략군을 맞추어 격파하고 전리품 자금을 획득하세요!
+        </p>
+
+        <div style="display: flex; justify-content: space-around; font-size: 14px; font-weight: 700; color: var(--gold-bright); margin-bottom: 10px;">
+          <span>점수: <span id="shooterScore">0</span></span>
+          <span>획득 자금: +<span id="shooterReward">0</span></span>
+          <span>남은 체력: <span id="shooterHp">❤️❤️❤️</span></span>
+        </div>
+
+        <div style="position: relative; width: 100%; max-width: 600px; margin: 0 auto; height: 400px; background: #0b0c1b; border: 2px solid var(--gold); border-radius: 12px; overflow: hidden;" id="shooterCanvasContainer">
+          <canvas id="shooterCanvas" width="600" height="400" style="width:100%; height:100%; display:block; cursor: crosshair;"></canvas>
+          <div id="shooterOverlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+            <h3 style="margin:0; font-size:22px; color:var(--gold-bright);">⚔️ 제국 군대 포탄 슈터</h3>
+            <p style="margin:0; font-size:13px; color:var(--parchment-dim);">마우스 이동 / 좌우 화살표로 포대 조종<br>자동으로 강력한 포탄이 연사됩니다!</p>
+            <button class="hero-primary-btn" id="startShooterBtn">🚀 게임 시작</button>
+          </div>
+        </div>
       </div>
     </section>
 
