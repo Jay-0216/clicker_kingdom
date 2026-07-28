@@ -632,8 +632,23 @@ textarea:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .topbar-wrap { padding: 6px 4px 0; }
+  .topbar { border-radius: 999px; padding: 4px 6px; gap: 4px; }
   .logo-text { display: none; }
-  .nav-tab-btn { font-size: 11px; padding: 4px 7px; }
-  .topbar { border-radius: 16px; padding: 4px 8px; }
-  .hero-title span { font-size: 20px; white-space: normal; }
+  .topbar-nav {
+    justify-content: flex-start;
+    padding: 2px 2px;
+    gap: 3px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-tab-btn {
+    font-size: 11px;
+    padding: 4px 8px;
+    letter-spacing: -0.2px;
+  }
+  .user-chip, .login-btn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .hero-title span { font-size: 18px; white-space: normal; }
 }

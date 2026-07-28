@@ -994,8 +994,17 @@ function switchView(viewName) {
     return;
   }
 
+  // Stop shooter mini-game loop if navigating away
+  if (viewName !== 'shooter' && typeof shooterActive !== 'undefined' && shooterActive) {
+    shooterActive = false;
+    if (typeof shooterAnimFrame !== 'undefined' && shooterAnimFrame) {
+      cancelAnimationFrame(shooterAnimFrame);
+      shooterAnimFrame = null;
+    }
+  }
+
   state.currentView = viewName;
-  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
+  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
   views.forEach(vId => {
     const el = document.getElementById(vId);
     if (el) el.hidden = true;
@@ -1256,7 +1265,7 @@ function renderClickerView(clicks, tier) {
         const el = document.getElementById('clickCount');
         if (el) {
           if (glitchStateToggle) {
-            el.textContent = '∞ (무한)';
+            el.textContent = '∞';
           } else {
             el.textContent = currentVal.toLocaleString();
           }
