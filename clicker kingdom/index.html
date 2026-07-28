@@ -336,6 +336,49 @@
           <button class="buy-btn" id="adminUnlockAll">모두 해금</button>
         </div>
 
+        <h4 style="color: var(--gold-bright); margin: 16px 0 8px;">👤 유저 관리</h4>
+        <button class="buy-btn" id="adminLoadUsers" style="margin-bottom: 10px;">유저 목록 새로고침</button>
+        <div id="adminUserList" style="max-height: 300px; overflow-y: auto; margin-bottom: 12px;"></div>
+
+        <div id="adminUserDetail" hidden>
+          <h4 style="color: var(--gold-bright); margin: 12px 0 8px;">✏️ 유저 상세: <span id="adminDetailName"></span></h4>
+
+          <div class="field">
+            <label>클릭 수 조절</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="adminUserClickInput" placeholder="새 클릭 수">
+              <button class="buy-btn" id="adminUserSetClick" style="white-space: nowrap;">설정</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>자금 지급</label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="buy-btn admin-user-give" data-amt="10000">+10K</button>
+              <button class="buy-btn admin-user-give" data-amt="100000">+100K</button>
+              <button class="buy-btn admin-user-give" data-amt="1000000">+1M</button>
+              <button class="buy-btn admin-user-give" data-amt="10000000">+10M</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>군대 지급</label>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserArmyBtns"></div>
+          </div>
+
+          <div class="field">
+            <label>보구 지급</label>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserRelicBtns"></div>
+          </div>
+
+          <div class="field">
+            <label>이펙트 지급</label>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserEffectBtns"></div>
+          </div>
+
+          <button class="buy-btn" id="adminUserSave" style="width: 100%; margin-top: 8px;">💾 변경사항 저장</button>
+        </div>
+
         <h4 style="color: var(--gold-bright); margin: 16px 0 8px;">📬 유저 제보 내역:</h4>
         <div id="adminFeedbackList" style="max-height: 200px; overflow-y: auto;"></div>
       </div>

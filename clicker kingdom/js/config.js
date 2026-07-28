@@ -1,6 +1,6 @@
 // ---------- Config & Game Data Constants ----------
 
-export const ADMIN_PASSWORD = "REMOVED"; // Admin password for game management
+export ***REMOVED*** // Admin password for game management
 
 // 9 Passive Auto-Clicker Troops (Spacebar Clicker re-themed into Kingdom War concept)
 export const ARMY_ITEMS = [
