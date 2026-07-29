@@ -2,69 +2,8 @@
 // Clicker Kingdom - Main Unified Application Script
 // Compatible with both local file:// opening and http/https web servers.
 // ============================================================================
-
-// ---------- 1. Config & Game Data Constants ----------
-***REMOVED***
-
-const ARMY_ITEMS = [
-  { id: 'peasant_spear', name: '농민 창병대', icon: '🗡️', cps: 1, baseCost: 15, desc: '가장 기본적인 영지 창병 수호대' },
-  { id: 'royal_archer', name: '왕실 궁수대', icon: '🏹', cps: 5, baseCost: 100, desc: '성벽 위에서 화살을 쏘는 숙련된 정예 궁수' },
-  { id: 'elite_cavalry', name: '정예 기병대', icon: '🐎', cps: 20, baseCost: 1100, desc: '전장을 종횡무진 휩쓰는 묵직한 중갑 기병대' },
-  { id: 'siege_catapult', name: '공성 투석기', icon: '🏰', cps: 80, baseCost: 12000, desc: '거대한 돌을 날려 적의 전선을 파괴하는 대포' },
-  { id: 'guardian_knight', name: '수호 기사단', icon: '🛡️', cps: 350, baseCost: 130000, desc: '왕국의 신성한 맹세를 이행하는 기사단' },
-  { id: 'alchemical_golem', name: '연금술 발도 골렘', icon: '🤖', cps: 1500, baseCost: 1400000, desc: '마법 연금술로 연마된 거대한 마도 골렘' },
-  { id: 'arcane_cannon', name: '마도 대포 요새', icon: '🔫', cps: 7500, baseCost: 20000000, desc: '마력을 집속시켜 연사하는 차세대 마도 요새' },
-  { id: 'dragon_artillery', name: '용의 화염포', icon: '☢️', cps: 40000, baseCost: 330000000, desc: '드래곤의 불꽃으로 광범위 지대를 태우는 대포' },
-  { id: 'dimensional_citadel', name: '차원 왜곡 요새', icon: '🛸', cps: 250000, baseCost: 5100000000, desc: '시공간 전선을 왜곡시키는 궁극의 제국 요새' }
-];
-
-const MULTIPLIER_RELICS = [
-  { id: 'commander_banner', name: "지휘관의 영주 깃발", icon: '🚩', cost: 100, addClick: 1, mult: 1, desc: '클릭당 자금 +1 추가' },
-  { id: 'runed_sword', name: "왕국 기사의 명검", icon: '🗡️', cost: 500, addClick: 2, mult: 1, desc: '클릭당 자금 +2 추가' },
-  { id: 'sovereign_seal', name: "제왕의 옥새", icon: '👑', cost: 10000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 증폭' },
-  { id: 'thunder_throne', name: "제국의 천둥 옥좌", icon: '⚡', cost: 250000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 추가 증폭' },
-  { id: 'celestial_crown', name: "천상의 정복자 왕관", icon: '🌟', cost: 5000000, addClick: 0, mult: 2, desc: '수동 클릭 자금 2배 추가 증폭' }
-];
-
-// Visual Effects Shop Items
-const VISUAL_EFFECTS = [
-  { id: 'effect-aura-dragon', name: '🐲 황금 용의 오라', icon: '🐲', cost: 5000, desc: '메인 씰에 웅장한 황금 용의 불꽃 오라 펄스가 휘감깁니다.' },
-  { id: 'effect-aura-lightning', name: '⚡ 천둥 번개 전율', icon: '⚡', cost: 50000, desc: '클릭할 때마다 푸른 번개 충격파가 메인 씰에 전율합니다.' },
-  { id: 'effect-aura-galaxy', name: '🌌 시공간 별빛 은하수', icon: '🌌', cost: 1000000, desc: '신비로운 자줏빛 신성 은하수 궤도가 씰을 회전합니다.' },
-  { id: 'effect-aura-hellfire', name: '🔥 지옥불 용암 분출', icon: '🔥', cost: 25000000, desc: '지옥의 붉은 용암 불꽃 폭발 이펙트가 타오릅니다.' }
-];
-
-const OFFLINE_CPS_ITEMS = [
-  { id: 'bg_administrator', name: '백그라운드 행정 집행관', icon: '🏛️', offlineCps: 1, baseCost: 200000000, desc: '웹을 닫아도 백그라운드에서 자금 수확 (초당 +1)' },
-  { id: 'bg_guardian_order', name: '시공간 자율 수호 군단', icon: '🛡️', offlineCps: 5, baseCost: 800000000, desc: '자율 작동하는 백그라운드 수호 군단 (초당 +5)' },
-  { id: 'bg_dimensional_citadel', name: '차원 왜곡 방치 요새', icon: '🛸', offlineCps: 15, baseCost: 1400000000, desc: '접속 종료 중에도 방치 자금 수확 (초당 +15)' }
-];
-
-const KINGDOM_TIERS = [
-  { clicks: 0, name: '초라한 오두막', title: '방랑 부족장', core1: '#55504a', core2: '#33302b', borderW: '0px', borderC: 'transparent', gems: 0, crown: false, glow: 0 },
-  { clicks: 100, name: '통나무 보루', title: '성주', core1: '#634b35', core2: '#3d2d1f', borderW: '2px', borderC: '#a8794c', gems: 1, crown: false, glow: 0.2 },
-  { clicks: 1000, name: '석조 요새', title: '영주', core1: '#4a525d', core2: '#282d35', borderW: '3px', borderC: '#8ca4be', gems: 2, crown: false, glow: 0.4 },
-  { clicks: 10000, name: '번창하는 성채', title: '정복왕', core1: '#7a2b37', core2: '#42161d', borderW: '4px', borderC: '#e56b73', gems: 3, crown: true, glow: 0.65 },
-  { clicks: 100000, name: '황금 왕국', title: '제국 황제', core1: '#856a28', core2: '#473812', borderW: '5px', borderC: '#f1ce6b', gems: 4, crown: true, glow: 0.85 },
-  { clicks: 1000000, name: '천상 제국', title: '천상 패왕', core1: '#4d2b7a', core2: '#281442', borderW: '6px', borderC: '#c48ef5', gems: 4, crown: true, glow: 1.0 }
-];
-const MAX_TIER_CLICKS = 5000000; // 천상 제국 초월 기준
-
-const UNLOCKABLE_TITLES = [
-  { id: 'title_novice', name: '초보 영주', req: '기본 지급', desc: '왕국을 건국한 영주' },
-  { id: 'title_victor', name: '백전백승의 챔피언', req: '대전 5승 달성', desc: '전장에서 승리를 거둔 명장' },
-  { id: 'title_raider', name: '전설의 약탈자', req: '약탈 10,000 클릭', desc: '적의 자금을 휩수한 약탈자' },
-  { id: 'title_bulwark', name: '불굴의 기사단장', req: '전투력 10,000 이상', desc: '강력한 제국 군대를 거느린 자' },
-  { id: 'title_visionary', name: '제국의 선지자', req: '제보/아이디어 작성', desc: '제국 발전에 기여한 지혜로운 통치자' },
-  { id: 'title_god', name: '신', req: '천상 제국 초월', desc: '천상의 영역을 넘어선 존재' }
-];
-
-const DAILY_MISSIONS = [
-  { id: 'm_click200', title: '⚔️ 왕국 수호', desc: '수동 클릭 100회 누르기', reward: 2000, target: 100, type: 'click' },
-  { id: 'm_buy_army', title: '🐎 군세 확장', desc: '군대 1회 이상 고용하기', reward: 5000, target: 1, type: 'army' },
-  { id: 'm_battle', title: '🛡️ 전장의 지휘관', desc: '친구/AI 대전 1회 완료하기', reward: 10000, target: 1, type: 'battle' },
-  { id: 'm_feedback', title: '💡 제국 발전의 소리', desc: '버그 제보 또는 아이디어 제안하기', reward: 20000, target: 1, type: 'feedback' }
-];
+// NOTE: 모든 게임 상수(제국 단계, 아이템 등)는 js/game-config.js에서 관리합니다.
+// ---------- 1. Constants are loaded from js/game-config.js ----------
 
 // ---------- 2. IndexedDB & Storage ----------
 const DB_NAME = 'ClickerKingdomDB';
@@ -203,12 +142,22 @@ async function loadPreferredAccount(id) {
   }
 
   if (localAccount && cloudAccount) {
-    const useCloud = getAccountFreshness(cloudAccount) > getAccountFreshness(localAccount);
-    const chosen = useCloud ? cloudAccount : localAccount;
+    const localFresh = getAccountFreshness(localAccount);
+    const cloudFresh = getAccountFreshness(cloudAccount);
+    const useCloud = cloudFresh >= localFresh;
+    const chosen = { ...(useCloud ? cloudAccount : localAccount) };
+    const other = useCloud ? localAccount : cloudAccount;
+
+    chosen.clicks = Math.max(chosen.clicks || 0, other.clicks || 0);
+    if ((other.clicks || 0) > (useCloud ? cloudAccount.clicks : localAccount.clicks || 0)) {
+      Object.assign(chosen, other, { clicks: other.clicks });
+    }
+    chosen.updatedAt = Math.max(localFresh, cloudFresh, Date.now());
+
     await setAccount(chosen);
 
-    if (!useCloud && typeof supabaseSyncAccount === 'function') {
-      await supabaseSyncAccount(localAccount);
+    if (typeof supabaseSyncAccount === 'function') {
+      await supabaseSyncAccount(chosen);
     }
 
     return chosen;
@@ -220,6 +169,62 @@ async function loadPreferredAccount(id) {
   }
 
   return localAccount;
+}
+
+function saveEmergencySnapshot() {
+  if (!state.currentUser) return;
+  try {
+    const emergencySnapshot = {
+      id: state.currentUser.id,
+      clicks: state.currentUser.clicks,
+      armies: state.armies,
+      relics: state.relics,
+      effects: state.effects,
+      equippedEffect: state.equippedEffect,
+      offlineArmies: state.offlineArmies,
+      equippedTitle: state.equippedTitle,
+      unlockedTitles: state.unlockedTitles,
+      warRecords: state.warRecords,
+      missionProgress: state.missionProgress,
+      lastOfflineTime: Date.now(),
+      savedAt: Date.now()
+    };
+    localStorage.setItem('ck_emergency_snapshot', JSON.stringify(emergencySnapshot));
+  } catch (e) {
+    // localStorage 쓰기 실패는 무시
+  }
+}
+
+function applyEmergencySnapshot(account) {
+  if (!account || !account.id) return false;
+  try {
+    const rawSnap = localStorage.getItem('ck_emergency_snapshot');
+    if (!rawSnap) return false;
+
+    const snap = JSON.parse(rawSnap);
+    if (!snap || snap.id !== account.id) return false;
+
+    let applied = false;
+    if ((snap.savedAt || 0) > (account.updatedAt || 0) && (snap.clicks || 0) >= (account.clicks || 0)) {
+      account.clicks = snap.clicks;
+      account.armies = snap.armies || account.armies;
+      account.relics = snap.relics || account.relics;
+      account.effects = snap.effects || account.effects;
+      account.equippedEffect = snap.equippedEffect !== undefined ? snap.equippedEffect : account.equippedEffect;
+      account.offlineArmies = snap.offlineArmies || account.offlineArmies;
+      account.equippedTitle = snap.equippedTitle || account.equippedTitle;
+      account.unlockedTitles = snap.unlockedTitles || account.unlockedTitles;
+      account.warRecords = snap.warRecords || account.warRecords;
+      account.missionProgress = snap.missionProgress || account.missionProgress;
+      account.updatedAt = snap.savedAt;
+      applied = true;
+    }
+
+    localStorage.removeItem('ck_emergency_snapshot');
+    return applied;
+  } catch (e) {
+    return false;
+  }
 }
 
 // ---------- 3. Reactive Central Game State ----------
@@ -734,8 +739,8 @@ function _renderRankingList(listEl, leaderboard) {
     const rank = i + 1;
     const isMe = state.currentUser && entry.id === state.currentUser.id;
     let scoreDisplay = '';
-    if (currentRankTab === 'clicks') scoreDisplay = `${(entry.clicks || 0).toLocaleString()} 클릭`;
-    else if (currentRankTab === 'power') scoreDisplay = `⚔️ ${(entry.battlePower || 0).toLocaleString()}`;
+    if (currentRankTab === 'clicks') scoreDisplay = `<span title="${(entry.clicks || 0).toLocaleString()}">${formatNumber(entry.clicks || 0)} 클릭</span>`;
+    else if (currentRankTab === 'power') scoreDisplay = `⚔️ ${formatNumber(entry.battlePower || 0)}`;
     else if (currentRankTab === 'honor') scoreDisplay = `🏆 ${entry.wins || 0}승`;
     
     // Resolve title name if raw ID is given or missing
@@ -1185,19 +1190,19 @@ function renderProfileView() {
     statsGrid.innerHTML = `
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">누적 자금</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">${clicks.toLocaleString()}</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);" title="${clicks.toLocaleString()}">${formatNumber(clicks)}</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">자동 수확 (CPS)</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${(state.cps || 0).toLocaleString()} /초</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${formatNumber(state.cps || 0)} /초</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">백그라운드 CPS</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${(state.offlineCps || 0).toLocaleString()} /초</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">+${formatNumber(state.offlineCps || 0)} /초</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">종합 전투력</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">⚔️ ${bp.toLocaleString()}</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);" title="${bp.toLocaleString()}">⚔️ ${formatNumber(bp)}</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">전장 승패</div>
@@ -1247,7 +1252,7 @@ function renderClickerView(clicks, tier) {
     if (state.currentUser && !(state.unlockedTitles || []).includes('title_god')) {
       state.unlockedTitles = state.unlockedTitles || [];
       state.unlockedTitles.push('title_god');
-      showToast('⚡ [신] 칭호를 획득했습니다! 천상의 영역을 초월했습니다.');
+      showToast('⚡ [신] 칭호를 획득했습니다! 무한의 영역을 초월했습니다.');
     }
 
     clickCountEl.classList.add('glitch-number');
@@ -1267,7 +1272,7 @@ function renderClickerView(clicks, tier) {
           if (glitchStateToggle) {
             el.textContent = '∞';
           } else {
-            el.textContent = currentVal.toLocaleString();
+            el.textContent = formatNumber(currentVal);
           }
         }
       }, 700);
@@ -1282,10 +1287,12 @@ function renderClickerView(clicks, tier) {
     if (titleBadgeEl) titleBadgeEl.classList.remove('glitch-text');
     if (sealBtn) sealBtn.classList.remove('glitch-seal');
     tierLabelEl.textContent = tier.name;
-    clickCountEl.textContent = clicks.toLocaleString();
+    // 단축 표기 + 전체 숫자 툴팁
+    clickCountEl.textContent = formatNumber(clicks);
+    clickCountEl.title = clicks.toLocaleString();
   }
 
-  document.getElementById('cpsLabel').textContent = `자동 수확: +${state.cps.toLocaleString()} /초 | 🌙 백그라운드: +${state.offlineCps.toLocaleString()} /초`;
+  document.getElementById('cpsLabel').textContent = `자동 수확: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초`;
   document.getElementById('guestBanner').hidden = !!state.currentUser;
 
   const tObj = UNLOCKABLE_TITLES.find(t => t.id === state.equippedTitle);
@@ -1359,7 +1366,7 @@ function renderQuickUpgrades(clicks) {
             <div class="quick-upgrade-sub">CPS +${item.cps}</div>
           </div>
         </div>
-        <button class="buy-btn" data-quick-buy-army="${item.id}">고용 (${cost.toLocaleString()})</button>
+        <button class="buy-btn" data-quick-buy-army="${item.id}" title="${cost.toLocaleString()}">고용 (${formatNumber(cost)})</button>
       </div>
     `;
   });
@@ -1377,7 +1384,7 @@ function renderQuickUpgrades(clicks) {
             <div class="quick-upgrade-sub">${topRelic.desc}</div>
           </div>
         </div>
-        <button class="buy-btn" data-quick-buy-relic="${topRelic.id}">연마 (${cost.toLocaleString()})</button>
+        <button class="buy-btn" data-quick-buy-relic="${topRelic.id}" title="${cost.toLocaleString()}">연마 (${formatNumber(cost)})</button>
       </div>
     `;
   });
@@ -1392,7 +1399,7 @@ function renderQuickUpgrades(clicks) {
             <div class="quick-upgrade-sub">${eff.desc}</div>
           </div>
         </div>
-        <button class="buy-btn" data-quick-buy-effect="${eff.id}">구매 (${eff.cost.toLocaleString()})</button>
+        <button class="buy-btn" data-quick-buy-effect="${eff.id}" title="${eff.cost.toLocaleString()}">구매 (${formatNumber(eff.cost)})</button>
       </div>
     `;
   });
@@ -1425,8 +1432,8 @@ function renderShopView(clicks) {
             <span class="item-desc">${item.desc} (CPS +${item.cps})</span>
           </div>
           <div class="item-action">
-            <button class="buy-btn" data-buy-army="${item.id}" ${canAfford ? '' : 'disabled'}>
-              고용 (${cost.toLocaleString()})
+            <button class="buy-btn" data-buy-army="${item.id}" ${canAfford ? '' : 'disabled'} title="${cost.toLocaleString()}">
+              고용 (${formatNumber(cost)})
             </button>
           </div>
         </div>
@@ -1453,8 +1460,8 @@ function renderShopView(clicks) {
             <span class="item-desc">${r.desc}</span>
           </div>
           <div class="item-action">
-            <button class="buy-btn" data-buy-relic="${r.id}" ${canAfford ? '' : 'disabled'}>
-              연마 (${cost.toLocaleString()})
+            <button class="buy-btn" data-buy-relic="${r.id}" ${canAfford ? '' : 'disabled'} title="${cost.toLocaleString()}">
+              연마 (${formatNumber(cost)})
             </button>
           </div>
         </div>
@@ -1481,7 +1488,7 @@ function renderShopView(clicks) {
           </div>
           <div class="item-action">
             <button class="buy-btn" data-buy-effect="${eff.id}" ${!canAfford ? 'disabled' : ''}>
-              ${isEquipped ? '해제하기' : owned ? '장착하기' : `구매 (${eff.cost.toLocaleString()})`}
+              ${isEquipped ? '해제하기' : owned ? '장착하기' : `구매 (${formatNumber(eff.cost)})`}
             </button>
           </div>
         </div>
@@ -1517,7 +1524,7 @@ function renderShopView(clicks) {
           </div>
           <div class="item-action">
             <button class="buy-btn" data-buy-offline="${item.id}" ${canAfford ? '' : 'disabled'}>
-              ${!state.currentUser ? '로그인 필요' : `구축 (${cost.toLocaleString()})`}
+              ${!state.currentUser ? '로그인 필요' : `구축 (${formatNumber(cost)})`}
             </button>
           </div>
         </div>
@@ -1681,11 +1688,11 @@ function checkOfflineHarvest(lastTime) {
 
     if (timeEl && earnedEl && rateEl) {
       timeEl.textContent = formatTimeDuration(elapsedSec);
-      earnedEl.textContent = `+${reward.toLocaleString()} 클릭`;
-      rateEl.textContent = `(백그라운드 수확 속도: +${effectiveRate.toLocaleString()} /초)`;
+      earnedEl.textContent = `+${formatNumber(reward)} 클릭`;
+      rateEl.textContent = `(백그라운드 수확 속도: +${formatNumber(effectiveRate)} /초)`;
       openModal('offlineHarvestModal');
     } else {
-      showToast(`🌙 접속하지 않은 ${formatTimeDuration(elapsedSec)} 동안 +${reward.toLocaleString()} 자금을 수확했습니다!`);
+      showToast(`🌙 접속하지 않은 ${formatTimeDuration(elapsedSec)} 동안 +${formatNumber(reward)} 자금을 수확했습니다!`);
     }
   }
 }
@@ -1856,11 +1863,16 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await loadPreferredAccount(id); // 수정: 로컬만 먼저 믿지 않고 더 최신 계정을 우선 사용한다.
+  const account = await loadPreferredAccount(id);
   if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
   const hash = await hashPassword(pw);
   if (hash !== account.passwordHash) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+
+  if (applyEmergencySnapshot(account)) {
+    await setAccount(account);
+    scheduleSave();
+  }
 
   state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
   state.avatar = account.avatar || '👑';
@@ -2203,14 +2215,21 @@ function setupEventListeners() {
       }
     } else if (document.visibilityState === 'hidden' && state.currentUser) {
       state.lastOfflineTime = Date.now();
-      scheduleSave();
+      saveEmergencySnapshot();
+      flushSave();
     }
   });
 
   // Subscribe state changes
   subscribeState(renderActiveView);
 
-  window.addEventListener('beforeunload', flushSave);
+  // beforeunload: async flushSave()는 브라우저가 기다려주지 않으므로,
+  // 동기적으로 localStorage에 긴급 백업을 저장해 두고
+  // 다음 로그인 시 이를 복구하도록 한다.
+  window.addEventListener('beforeunload', () => {
+    saveEmergencySnapshot();
+    flushSave();
+  });
 }
 
 function setModalTab(tab) {
@@ -2246,9 +2265,15 @@ async function init() {
 
   const session = await getSession();
   if (session && session.id) {
-    const account = await loadPreferredAccount(session.id); // 수정: 새로고침/다른 기기 복구 시 클라우드 계정도 함께 확인한다.
+    const account = await loadPreferredAccount(session.id);
     if (account) {
+      if (applyEmergencySnapshot(account)) {
+        await setAccount(account);
+        scheduleSave();
+      }
+
       state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
+      state.avatar = account.avatar || '👑';
       state.armies = account.armies || {};
       state.relics = account.relics || {};
       state.effects = account.effects || [];
@@ -2266,19 +2291,27 @@ async function init() {
     } else {
       await clearSession();
     }
+  } else {
+    // 세션이 없어도 스냅셟이 남아 있으면 정리
+    try { localStorage.removeItem('ck_emergency_snapshot'); } catch (e) {}
   }
 
   renderTopbarActions();
   switchView('landing');
   renderCloudStatus();
 
-  // 1-second auto harvest (CPS) loop
+  // 1-second auto harvest (CPS) loop — 저장은 5초마다 (매 tick마다 scheduleSave 하지 않음)
+  let lastCpsSaveAt = 0;
   setInterval(() => {
     if (state.cps > 0) {
       addClicks(state.cps);
       if (state.currentUser) {
-        scheduleSave();
         state.lastOfflineTime = Date.now();
+        const now = Date.now();
+        if (now - lastCpsSaveAt >= 5000) {
+          lastCpsSaveAt = now;
+          scheduleSave();
+        }
       }
     }
   }, 1000);

@@ -15,6 +15,7 @@ clicker kingdom/
 │   ├── main.css          # 고유 디자인 시스템, 테마 변수, 버튼제국 스타일, 오라 애니메이션, 히어로 랜딩, 기본 레이아웃, 계정 드롭다운
 │   └── components.css    # 상점 카드, 이펙트 카드, 클릭커 밑 빠른 업그레이드 패널, 10초 실시간 전선 게이지, 알약 스타일 모달 탭, 랭킹/칭호 뱃지, 미션, 제보/Admin 모달
 └── js/
+    ├── game-config.js    # 제국 단계, 아이템, formatNumber 등 게임 수치 설정
     ├── app.js            # 전체 통합 스크립트 (모든 브라우저 file:// 및 http:// 호환 실행)
     └── supabase-sync.js  # Supabase 클라우드 동기화 (선택적, 미설정 시 로컬 IndexedDB만 사용)
 ```
@@ -46,6 +47,26 @@ clicker kingdom/
 ---
 
 ## 3. 변경 이력 (Changelog)
+
+### [v2.9.0] - 2026-07-29
+- **게임 설정 파일 분리 (`js/game-config.js`)**:
+  - `KINGDOM_TIERS`, `ARMY_ITEMS`, `MULTIPLIER_RELICS`, `VISUAL_EFFECTS`, `OFFLINE_CPS_ITEMS`, `UNLOCKABLE_TITLES`, `DAILY_MISSIONS`, `ADMIN_PASSWORD`를 `app.js`에서 분리.
+  - `index.html`에서 `app.js`보다 먼저 로드.
+- **숫자 단축 표기 (`formatNumber`)**:
+  - K / M / B / T / aa / ht(핵타) / ac… / ∞ 체계 적용.
+  - 클릭 카운터, CPS 라벨, 상점 가격, 랭킹, 프로필, 퀵 업그레이드, 오프라인 수확 UI에 적용. 전체 숫자는 `title` 툴팁으로 병기.
+- **제국 단계 난이도 재설계**:
+  - 9단계 지수 곡선 (초라한 오두막 → 무한의 영역 1e19 ≈ 10해).
+  - `MAX_TIER_CLICKS = 1e19` 초과 시 Glitch ∞ 효과 및 `[신]` 칭호 해금.
+  - 후반 콘텐츠 유닛 3종 추가 (천상 정예 군단, 허공 소멸포, 무한 에너지 기관).
+- **클릭 수 동기화 버그 수정**:
+  - **원인**: `beforeunload`에서 async `flushSave()`가 완료되기 전 페이지 종료, `updatedAt` 비교 허점, CPS 루프 매초 `scheduleSave()`로 저장 경쟁.
+  - **수정**:
+    - `saveEmergencySnapshot()` — 페이지 종료/탭 숨김 시 localStorage 동기 백업.
+    - `applyEmergencySnapshot()` — 다음 로그인/세션 복구 시 스냅샷 병합.
+    - `loadPreferredAccount()` — 클라우드 우선(동률 시), 양쪽 `clicks` 최댓값 병합 후 클라우드 재동기화.
+    - CPS 자동 저장 주기 1초 → 5초, 탭 숨김 시 즉시 `flushSave()`.
+    - `flushSave()`에 `updatedAt` 기록 및 Supabase `await` 유지.
 
 ### [v2.8.0] - 2026-07-28
 - **화면 분할 버그 수정**: `switchView()` 이동 시 `shooterView` 포함 모든 뷰를 완벽히 숨기고, 포탄 슈팅 게임 애니메이션 루프(`shooterAnimFrame`, `shooterActive`)를 즉시 정지하도록 정돈하여 뷰 이동 시 게임 화면과 타 뷰가 겹쳐서 분할 표시되던 현상을 해결했습니다.
