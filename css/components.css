@@ -161,106 +161,6 @@
 .item-count { font-size: 12px; color: var(--parchment); font-weight: 400; }
 .item-desc { font-size: 12px; color: var(--parchment-dim); display: block; margin-top: 2px; }
 
-/* ---------- Panel System ---------- */
-.panel {
-  background: rgba(28, 31, 66, 0.65);
-  border: 1px solid rgba(212, 175, 55, 0.25);
-  border-radius: 16px;
-  padding: 18px;
-  backdrop-filter: blur(8px);
-  width: 100%;
-}
-.panel-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--gold-bright);
-  margin-bottom: 10px;
-}
-.panel-desc {
-  font-size: 12px;
-  color: var(--parchment-dim);
-  margin-bottom: 10px;
-}
-
-/* ---------- Progress Bars ---------- */
-.progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.progress-label {
-  font-size: 12px;
-  color: var(--parchment-dim);
-  min-width: 38px;
-  flex-shrink: 0;
-}
-.progress-track {
-  flex: 1;
-  height: 8px;
-  background: rgba(0,0,0,0.4);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.progress-fill {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--gold-bright), var(--gold));
-  border-radius: 999px;
-  width: 0%;
-  transition: width 0.4s ease;
-}
-.progress-count {
-  font-size: 12px;
-  color: var(--parchment-dim);
-  min-width: 40px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-/* ---------- Modal Error Text ---------- */
-.modal-error {
-  color: #ff9d9d;
-  font-size: 12px;
-  margin: 6px 0;
-}
-
-/* ---------- Game Shell & Bottom Nav ---------- */
-#viewContainer {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 16px 14px;
-}
-#bottomNav {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 10px;
-  background: linear-gradient(180deg, var(--navy-2), var(--navy));
-  border-top: 1px solid rgba(212, 175, 55, 0.25);
-  position: sticky;
-  bottom: 0;
-  z-index: 80;
-}
-#bottomNav .nav-tab-btn {
-  font-size: 11px;
-  padding: 6px 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-#bottomNav .nav-tab-btn small {
-  font-size: 10px;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
 /* ---------- Battle Setup & Mode Cards ---------- */
 .battle-mode-cards {
   display: grid;
@@ -308,38 +208,6 @@
   border-color: var(--gold-bright);
   box-shadow: 0 0 8px rgba(241,206,106,0.4);
 }
-
-.room-code-card {
-  background: rgba(28, 31, 66, 0.8);
-  border: 1px solid var(--gold);
-  border-radius: 16px;
-  padding: 20px;
-  text-align: center;
-  margin-bottom: 20px;
-  backdrop-filter: blur(8px);
-}
-.room-code-label { font-size: 13px; color: var(--parchment-dim); margin-bottom: 8px; }
-.room-code-value {
-  font-family: 'Cinzel', serif;
-  font-size: 42px;
-  font-weight: 900;
-  color: var(--gold-bright);
-  text-shadow: 0 0 20px rgba(241,206,106,0.5);
-  letter-spacing: 8px;
-  margin: 8px 0;
-}
-.room-code-hint { font-size: 12px; color: var(--parchment-dim); }
-.join-room-section {
-  background: rgba(28, 31, 66, 0.5);
-  border: 1px solid rgba(212,175,55,0.2);
-  border-radius: 16px;
-  padding: 18px;
-  margin-top: 8px;
-}
-.join-room-label { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--gold-bright); }
-.join-room-row { display: flex; gap: 10px; }
-.battle-vs-title { font-size: 14px; color: var(--parchment-dim); }
-.battle-power-display { font-size: 12px; color: var(--parchment-dim); opacity: 0.8; }
 
 /* ---------- Battle Arena & Tug-of-War Fill Bar ---------- */
 .battle-arena {
@@ -670,32 +538,6 @@
 @keyframes toastFadeIn {
   from { opacity: 0; transform: translate(-50%, 15px); }
   to { opacity: 1; transform: translate(-50%, 0); }
-}
-
-/* ---------- Profile Card ---------- */
-.profile-card {
-  background: rgba(28, 31, 66, 0.75);
-  border: 1px solid rgba(212, 175, 55, 0.35);
-  border-radius: 20px;
-  padding: 24px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
-  width: 100%;
-  max-width: 520px;
-  margin: 0 auto;
-}
-
-.bg-preview {
-  width: 100%;
-  height: 120px;
-  border-radius: 12px;
-  border: 1px solid rgba(212, 175, 55, 0.25);
-  margin-top: 8px;
-  background: rgba(0,0,0,0.3) center/cover no-repeat;
-  transition: background-image 0.3s ease;
-}
-.bg-preview.has-bg {
-  border-color: var(--gold-bright);
 }
 
 /* ---------- Cloud Sync Status ---------- */

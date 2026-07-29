@@ -1,253 +1,379 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://ufisfakmsaiicetlzjal.supabase.co wss://ufisfakmsaiicetlzjal.supabase.co;">
-  <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
-  <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
-
-  <title>Clicker Kingdom</title>
-  <link rel="stylesheet" href="css/main.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <link href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" rel="preload" as="script">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://ufisfakmsaiicetlzjal.supabase.co; img-src 'self' data:;">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta http-equiv="Referrer-Policy" content="no-referrer-when-downgrade">
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), interest-cohort=()">
+<title>Clicker Kingdom - 위대한 제국의 건국</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Noto+Serif+KR:wght@400;600;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-sync.js"></script>
 </head>
 <body>
-  <div id="app">
-  <div id="landingView" class="view">
-    <div class="landing-hero">
-      <h1 class="landing-title">👑 CLICKER KINGDOM</h1>
-      <p class="landing-subtitle">탭 한 번으로 세워지는 나만의 제국</p>
-      <div class="landing-buttons">
-        <button id="landingNewGameBtn">⚔️ 신규 게임</button>
-        <button id="landingContinueBtn" style="display:none;">📜 이어하기</button>
-        <button id="landingCloudBtn">☁ 클라우드 진단</button>
+<div id="app">
+
+  <!-- Topbar Navigation -->
+  <div class="topbar-wrap">
+    <header class="topbar">
+      <div class="topbar-top-row">
+        <div class="logo" id="logoHeader">
+          <svg class="logo-crest" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2 L20 5 V11 C20 16 16.5 19.5 12 21 C7.5 19.5 4 16 4 11 V5 Z" fill="none" stroke="#D4AF37" stroke-width="1.4"/>
+            <path d="M12 6.5 L14.5 9 L12 11.5 L9.5 9 Z" fill="#D4AF37"/>
+          </svg>
+          <span class="logo-text">CLICKER KINGDOM</span>
+        </div>
+        <div class="topbar-actions" id="topbarActions"></div>
       </div>
-      <div id="landingCloudStatus" class="cloud-status" style="margin-top: 10px; font-size: 12px;"></div>
-    </div>
+
+      <nav class="topbar-nav">
+        <button class="nav-tab-btn" data-nav-view="clicker" data-view="clicker"><span class="topbar-icon">🏰</span> 클릭</button>
+        <button class="nav-tab-btn" data-nav-view="shop" data-view="shop"><span class="topbar-icon">⚔️</span> 군대 상점</button>
+        <button class="nav-tab-btn" data-nav-view="battle" data-view="battle"><span class="topbar-icon">🛡️</span> 대전</button>
+        <button class="nav-tab-btn" data-nav-view="shooter" data-view="shooter"><span class="topbar-icon">🚀</span> 포탄 슈팅</button>
+        <button class="nav-tab-btn" data-nav-view="ranking" data-view="ranking"><span class="topbar-icon">🏆</span> 랭킹</button>
+        <button class="nav-tab-btn" data-nav-view="titles" data-view="titles"><span class="topbar-icon">👑</span> 칭호</button>
+        <button class="nav-tab-btn" data-nav-view="missions" data-view="missions"><span class="topbar-icon">📜</span> 미션</button>
+        <button class="nav-tab-btn" id="feedbackNavBtn"><span class="topbar-icon">💡</span> 제보</button>
+      </nav>
+    </header>
   </div>
 
-  <div id="clickerView" class="view" hidden>
-    <div id="topbar">
-      <span id="topbarUser"></span>
-      <span id="topbarClicks">0</span>
-      <span id="topbarActions"></span>
-    </div>
-    <div id="cloudStatus" class="cloud-status"></div>
+  <!-- Stage Area -->
+  <main class="stage">
 
-    <div id="viewContainer">
-      <div id="viewClickerMain">
-        <div id="clickerPanel" class="panel">
-          <div id="clickerSeal">
-            <div id="sealGlow"></div>
-            <div id="sealInner">🛡️</div>
-            <button id="sealBtn">👆</button>
-          </div>
-          <div id="cpsDisplay">0 / 초</div>
-        </div>
-
-        <div id="progressPanel" class="panel">
-          <div class="panel-title">⭐ 성장</div>
-          <div id="progressBars">
-            <div class="progress-row" data-progress="clicks">
-              <span class="progress-label">탭</span>
-              <span class="progress-track"><span class="progress-fill" id="progressClicksFill"></span></span>
-              <span class="progress-count" id="progressClicksCount">0</span>
-            </div>
-            <div class="progress-row" data-progress="armies">
-              <span class="progress-label">군대</span>
-              <span class="progress-track"><span class="progress-fill" id="progressArmiesFill"></span></span>
-              <span class="progress-count" id="progressArmiesCount">0</span>
-            </div>
-            <div class="progress-row" data-progress="battles">
-              <span class="progress-label">전투</span>
-              <span class="progress-track"><span class="progress-fill" id="progressBattlesFill"></span></span>
-              <span class="progress-count" id="progressBattlesCount">0</span>
-            </div>
-          </div>
-        </div>
-        <div id="missionsPanel" class="panel" hidden>
-          <div class="panel-title">🎯 임무</div>
-          <div id="missionsList"></div>
-        </div>
-
-        <div id="relicPanel" class="panel">
-          <div class="panel-title">🏺 유물</div>
-          <div id="relicList"></div>
-        </div>
+    <!-- 1. Logis.xyz Style Hero Landing View -->
+    <section id="landingView" class="view">
+      <span class="hero-badge">✨ 클릭으로 건설하는 제국 게임</span>
+      <h1 class="hero-title">CLICKER KINGDOM<span>당신만의 위대한 제국을 건설하세요</span></h1>
+      <p class="hero-subtitle">
+        단 한 번의 클릭에서 시작해 강력한 군대를 고용하고,<br>
+        다른 제국과 펼쳐지는 10초 실시간 클릭 대전에서 승리해 명예의 전당에 이름을 올리세요.
+      </p>
+      
+      <div class="hero-actions">
+        <button class="hero-primary-btn" id="landingStartBtn">⚔️ 지금 제국 건설하기</button>
+        <button class="hero-secondary-btn" id="landingViewRankBtn">📜 랭킹 및 칭호 보기</button>
       </div>
 
-      <div id="armyView">
-        <div id="armyPanel" class="panel">
-          <div class="panel-title">⚔️ 군대</div>
-          <div class="panel-desc">클릭으로 군대를 모아 전투력을 높이세요</div>
-          <div id="armyList"></div>
-          <div id="battlePanel" hidden></div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🗡️</div>
+          <h3 class="feature-title">12종의 정예 군대 & 백그라운드 CPS</h3>
+          <p class="feature-desc">농민 창병대부터 백그라운드 군단까지, 웹을 닫아도 자동으로 자금을 수확하세요.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3 class="feature-title">실시간 10초 탭 배틀</h3>
+          <p class="feature-desc">4자리 룸코드로 옆의 친구와 즉시 대전! 폭풍 연타로 상대방 제국의 전선을 실시간으로 밀어붙이세요.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🏆</div>
+          <h3 class="feature-title">명예의 전당 & 칭호</h3>
+          <p class="feature-desc">누적 클릭, 종합 전투력, 전장 명예 3가지 랭킹 경쟁과 수호 칭호 시스템을 즐겨보세요.</p>
         </div>
       </div>
+    </section>
 
-      <div id="shopView">
-        <div class="panel">
-          <div class="panel-title">🏪 상점</div>
-          <div id="shopList"></div>
+    <!-- 2. Clicker Game Main View -->
+    <section id="clickerView" class="view" hidden>
+      <div id="emojiRain" aria-hidden="true"></div>
+      <span class="title-tag-badge" id="currentTitleBadge">👑 [방랑 부족장]</span>
+      <p class="tier-label" id="tierLabel">초라한 오두막</p>
+      <h1 class="click-count" id="clickCount">0</h1>
+      <div class="cps-rate" id="cpsLabel">자동 수확: +0 /초 | 🌙 백그라운드: +0 /초</div>
+
+      <button class="seal-btn" id="sealBtn" aria-label="클릭해서 왕국을 성장시키기">
+        <div class="seal-crown" id="sealCrown">👑</div>
+        <div class="seal-sparkles" id="sealSparkles"></div>
+        <svg class="seal-svg seal-ring" id="sealRing" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="ring-mid" cx="50" cy="50" r="40" opacity="0"/>
+          <circle class="ring-in" cx="50" cy="50" r="34" opacity="0"/>
+        </svg>
+        <svg class="seal-svg seal-crest" id="sealCrest" viewBox="0 0 100 100" aria-hidden="true">
+          <path class="crest-outline" d="M50 14 L74 24 V48 C74 64 63 76 50 82 C37 76 26 64 26 48 V24 Z" opacity="0"/>
+          <path class="crest-diamond-1" d="M50 30 L58 40 L50 50 L42 40 Z" opacity="0"/>
+          <path class="crest-diamond-2" d="M50 50 L58 60 L50 70 L42 60 Z" opacity="0"/>
+        </svg>
+        <div class="seal-gems" id="sealGems">
+          <span class="gem g1"></span>
+          <span class="gem g2"></span>
+          <span class="gem g3"></span>
+          <span class="gem g4"></span>
         </div>
+      </button>
+      <p class="hint">화면을 누르거나 [Spacebar] 키를 누르면 클릭됩니다</p>
+
+      <!-- Quick Purchase Panel under Clicker -->
+      <div id="quickUpgradesPanel" class="quick-upgrades-wrap"></div>
+
+      <div class="guest-banner" id="guestBanner">
+        <p>로그인하면 제국 기록이 안전하게 저장되고 명예의 전당에 등록돼요.</p>
+        <button class="ghost-btn" id="guestSignupBtn">회원가입하기</button>
       </div>
+    </section>
 
-      <div id="rankingView">
-      </div>
-
-      <!-- Battle View -->
-      <section id="battleView" class="view" hidden>
-        <div class="section-header">
-          <h2 class="section-title">🛡️ 제국 전장 (10초 실시간 대전)</h2>
-        </div>
-
-        <!-- Setup Panel -->
-        <div id="battleSetupPanel">
-          <div class="battle-mode-cards">
-            <div class="battle-mode-card" id="aiBattleBtn">
-              <div class="battle-mode-icon">⚔️</div>
-              <div class="battle-mode-title">AI 라이벌 침공</div>
-              <div class="battle-mode-desc">야만족 족장의 암흑 군대와 맞붙어 자금을 약탈합니다.</div>
-            </div>
-            <div class="battle-mode-card" id="createRoomBtn">
-              <div class="battle-mode-icon">📱</div>
-              <div class="battle-mode-title">내 룸 코드 생성</div>
-              <div class="battle-mode-desc">나의 룸 코드를 생성하여 친구에게 알려줍니다.</div>
-            </div>
-          </div>
-
-          <!-- Room Code Display -->
-          <div id="myRoomCodeCard" class="room-code-card" hidden>
-            <div class="room-code-label">내 룸 코드</div>
-            <div class="room-code-value" id="roomCodeDisplay">----</div>
-            <div class="room-code-hint">친구가 이 코드를 입력하면 자동으로 대전이 시작됩니다</div>
-          </div>
-
-          <!-- Join Room -->
-          <div class="join-room-section">
-            <div class="join-room-label">친구의 룸 코드 입력</div>
-            <div class="join-room-row">
-              <input class="room-input" type="text" id="roomCodeInput" placeholder="4자리 코드 입력" maxlength="4">
-              <button class="buy-btn" id="joinRoomBtn">입장 대전</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Battle Arena Panel -->
-        <div id="battleArenaPanel" class="battle-arena" hidden>
-          <div class="battle-timer" id="battleTimerDisplay">10s</div>
-          <div class="battle-vs-title">VS <span id="enemyNameLabel">적 제국</span></div>
-          <div class="battle-power-display">적 전투력: <span id="enemyPowerLabel">0</span></div>
-
-          <div class="battle-clash-stage">
-            <div class="battle-army-side">
-              <div class="battle-castle-icon">🏰</div>
-              <div>내 제국 군대</div>
-              <div class="battle-army-units">🗡️🏹🐎🤖</div>
-            </div>
-            <div class="battle-center-clash">
-              <div class="clash-sparks">💥⚔️💥</div>
-              <div>전선 충돌 중!</div>
-            </div>
-            <div class="battle-army-side">
-              <div class="battle-castle-icon">🚩</div>
-              <div id="enemyCastleLabel">적 암흑 군대</div>
-              <div class="battle-army-units">🧟‍♂️🛡️🔫☢️</div>
-            </div>
-          </div>
-
-          <div class="battle-vs-bar">
-            <div class="battle-frontline-fill" id="battleFrontlineFill" style="width:50%"></div>
-          </div>
-
-          <button class="battle-tap-btn" id="battleTapBtn">🔥 폭풍 연타로 전선 밀어내기!</button>
-        </div>
-      </section>
-    </div>
-
-    <div id="bottomNav">
-      <button data-nav-view="clicker" class="nav-tab-btn active">🛡️<small>본진</small></button>
-      <button data-nav-view="army" class="nav-tab-btn">⚔️<small>군대</small></button>
-      <button data-nav-view="shop" class="nav-tab-btn">🏪<small>상점</small></button>
-      <button data-nav-view="battle" class="nav-tab-btn">⚡<small>전장</small></button>
-      <button data-nav-view="ranking" class="nav-tab-btn">🏆<small>명예의 전당</small></button>
-    </div>
-  </div>
-
-  <!-- Profile View -->
-  <div id="profileView" class="view" hidden>
-    <div class="stage">
+    <!-- 3. Upgrades & Visual Effects Shop View (Default: Visual Effects Tab) -->
+    <section id="shopView" class="view" hidden>
       <div class="section-header">
-        <h2 class="section-title">👤 프로필 설정</h2>
+        <h2 class="section-title">⚔️ 제국 상점 & 보구/이펙트</h2>
       </div>
 
-      <div class="profile-card">
-        <div class="field">
-          <label>프로필 이미지</label>
-          <div id="profileAvatarDisplay" style="font-size: 48px; text-align: center; margin-bottom: 8px;"></div>
-          <div id="avatarPickerContainer" style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;"></div>
-        </div>
+      <div class="shop-tabs">
+        <button class="shop-tab-btn active" id="shopTabEffectBtn">✨ 제국 이펙트</button>
+        <button class="shop-tab-btn" id="shopTabArmyBtn">🗡️ 정예 군대 (CPS)</button>
+        <button class="shop-tab-btn" id="shopTabRelicBtn">👑 수동 보구</button>
+        <button class="shop-tab-btn" id="shopTabOfflineBtn">🌙 백그라운드 CPS</button>
+      </div>
 
-        <div class="field">
-          <label for="profileIdInput">계정 ID</label>
-          <input id="profileIdInput" type="text" readonly style="opacity: 0.6;">
-        </div>
+      <div id="effectShopList" class="item-list"></div>
+      <div id="armyShopList" class="item-list" hidden></div>
+      <div id="relicShopList" class="item-list" hidden></div>
+      <div id="offlineShopList" class="item-list" hidden></div>
+    </section>
 
-        <div class="field">
-          <label for="profileNicknameInput">닉네임</label>
-          <div style="display: flex; gap: 6px;">
-            <input id="profileNicknameInput" type="text" maxlength="12" placeholder="닉네임 입력" style="flex: 1;">
-            <button class="buy-btn" id="saveNicknameBtn">저장</button>
+    <!-- 4. Tug-of-War Battle View -->
+    <section id="battleView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🛡️ 제국 전장 (10초 실시간 대전)</h2>
+      </div>
+
+      <div id="battleSetupPanel">
+        <div class="battle-mode-cards">
+          <div class="battle-mode-card" id="aiBattleBtn">
+            <div class="battle-mode-icon">⚔️</div>
+            <div class="battle-mode-title">AI 라이벌 침공</div>
+            <div class="battle-mode-desc">야만족 족장의 암흑 군대와 맞붙어 자금을 약탈합니다.</div>
+          </div>
+          <div class="battle-mode-card" id="createRoomBtn">
+            <div class="battle-mode-icon">📱</div>
+            <div class="battle-mode-title">내 룸 코드 생성</div>
+            <div class="battle-mode-desc">나의 룸 코드를 생성하여 친구에게 알려줍니다.</div>
           </div>
         </div>
 
-        <div class="field">
-          <label for="profileBgInput">배경 이미지 URL</label>
-          <div style="display: flex; gap: 6px;">
-            <input id="profileBgInput" type="text" placeholder="https://example.com/wallpaper.jpg" style="flex: 1;">
-            <button class="buy-btn" id="applyBgBtn">적용</button>
+        <div id="myRoomCodeCard" style="background: rgba(212,175,55,0.15); border: 1px solid var(--gold); border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 14px;" hidden>
+          <span style="font-size: 13px; color: var(--parchment-dim);">🔑 나의 룸 코드: </span>
+          <span id="roomCodeDisplay" style="font-family: 'Cinzel', serif; font-size: 20px; font-weight: 900; color: var(--gold-bright); letter-spacing: 2px;"></span>
+          <p style="font-size: 12px; color: var(--parchment-dim); margin: 4px 0 0;">친구에게 이 코드를 알려주고, 아래에서 친구의 룸 코드를 입력하여 대전하세요!</p>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 6px;">⚔️ 친구의 룸 코드 입력 대전 (로그인 필요):</p>
+          <div class="room-input-card">
+            <input type="text" id="roomCodeInput" class="room-input" placeholder="친구의 4자리 코드 입력 (예: 7829)" maxlength="6">
+            <button class="buy-btn" id="joinRoomBtn">입장 대전</button>
           </div>
-          <div id="bgPreview" class="bg-preview"></div>
-          <button class="text-btn" id="removeBgBtn" style="font-size: 11px; padding: 2px 0;">배경 제거</button>
-        </div>
-
-        <div style="margin-top: 20px;">
-          <div class="section-header" style="margin-bottom: 12px; padding-bottom: 6px;">
-            <span class="section-title" style="font-size: 16px;">📊 전적</span>
-          </div>
-          <div id="profileStatsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;"></div>
-        </div>
-
-        <div style="margin-top: 20px;">
-          <div class="section-header" style="margin-bottom: 12px; padding-bottom: 6px;">
-            <span class="section-title" style="font-size: 16px;">👑 칭호</span>
-          </div>
-          <div id="profileTitlesList"></div>
-        </div>
-
-        <div style="margin-top: 20px;">
-          <div class="section-header" style="margin-bottom: 12px; padding-bottom: 6px;">
-            <span class="section-title" style="font-size: 16px;">✨ 시각 효과</span>
-          </div>
-          <div id="profileEffectsList"></div>
-        </div>
-
-        <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="buy-btn" id="profileCloudSaveBtn">☁️ 클라우드에 캐시 저장</button>
-          <button class="ghost-btn" id="profileLogoutBtn">로그아웃</button>
-        </div>
-
-        <div id="profileAdminSection" hidden style="margin-top: 20px;">
-          <button class="buy-btn" id="profileGoAdminBtn">🛠️ 개발자 패널</button>
         </div>
       </div>
-    </div>
-  </div>
-  </div><!-- /#app -->
+
+      <!-- Real-time Tap Battle Arena with Epic Military Clash Visuals -->
+      <div id="battleArenaPanel" class="battle-arena" hidden>
+        <div class="battle-timer" id="battleTimerDisplay">10s</div>
+        <div style="font-size: 15px; font-weight: 700; color: var(--gold-bright);">VS <span id="enemyNameLabel">적 제국</span> — <span id="enemyPowerLabel">클릭으로 승부!</span></div>
+        
+        <!-- Military Clash Stage Visuals -->
+        <div class="battle-clash-stage">
+          <div class="battle-army-side">
+            <div class="battle-castle-icon">🏰</div>
+            <span style="font-size: 12px; font-weight: 700; color: var(--gold-bright);">내 제국 군대</span>
+            <div class="battle-army-units">🗡️🏹🐎🤖</div>
+          </div>
+
+          <div class="battle-center-clash">
+            <div class="clash-sparks">💥⚔️💥</div>
+            <span style="font-size: 11px; font-weight: 700; color: var(--ruby);">전선 충돌 중!</span>
+          </div>
+
+          <div class="battle-army-side">
+            <div class="battle-castle-icon">🚩</div>
+            <span style="font-size: 12px; font-weight: 700; color: #ff8b8b;" id="enemyCastleLabel">적 암흑 군대</span>
+            <div class="battle-army-units">🧟‍♂️🛡️🔫☢️</div>
+          </div>
+        </div>
+
+        <div class="battle-vs-bar">
+          <div class="battle-frontline-fill" id="battleFrontlineFill"></div>
+        </div>
+
+        <button class="battle-tap-btn" id="battleTapBtn">🔥 폭풍 연타로 전선 밀어내기!</button>
+      </div>
+    </section>
+
+    <!-- 4.5. Space Cannon Shooter Mini-Game View -->
+    <section id="shooterView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🚀 군대 포탄 디펜스 슈팅</h2>
+      </div>
+
+      <div class="shop-card" style="text-align: center;">
+        <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 10px;">
+          내 군대의 원거리 포대에서 계속 포탄이 발사됩니다! 방향키/마우스/터치로 적 침략군을 맞추어 격파하고 전리품 자금을 획득하세요!
+        </p>
+
+        <div style="display: flex; justify-content: space-around; font-size: 14px; font-weight: 700; color: var(--gold-bright); margin-bottom: 10px;">
+          <span>점수: <span id="shooterScore">0</span></span>
+          <span>획득 자금: +<span id="shooterReward">0</span></span>
+          <span>남은 체력: <span id="shooterHp">❤️❤️❤️</span></span>
+        </div>
+
+        <div style="position: relative; width: 100%; max-width: 600px; margin: 0 auto; height: 400px; background: #0b0c1b; border: 2px solid var(--gold); border-radius: 12px; overflow: hidden;" id="shooterCanvasContainer">
+          <canvas id="shooterCanvas" width="600" height="400" style="width:100%; height:100%; display:block; cursor: crosshair;"></canvas>
+          <div id="shooterOverlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+            <h3 style="margin:0; font-size:22px; color:var(--gold-bright);">⚔️ 제국 군대 포탄 슈터</h3>
+            <p style="margin:0; font-size:13px; color:var(--parchment-dim);">마우스 이동 / 좌우 화살표로 포대 조종<br>자동으로 강력한 포탄이 연사됩니다!</p>
+            <button class="hero-primary-btn" id="startShooterBtn">🚀 게임 시작</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Ranking View -->
+    <section id="rankingView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🏆 명예의 전당</h2>
+        <button class="text-btn" id="rankingRefreshBtn" title="랭킹 새로고침">🔄 새로고침</button>
+      </div>
+
+      <div class="ranking-tabs">
+        <button class="rank-tab-btn active" data-rank-tab="clicks">👑 누적 클릭</button>
+        <button class="rank-tab-btn" data-rank-tab="power">⚔️ 종합 전투력</button>
+        <button class="rank-tab-btn" data-rank-tab="honor">🏆 전장 승리</button>
+      </div>
+
+      <div class="ranking-list" id="rankingList"></div>
+    </section>
+
+    <!-- 6. Titles Collection View -->
+    <section id="titlesView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🎖️ 제국 칭호 도감</h2>
+      </div>
+      <div class="titles-grid" id="titlesContainer"></div>
+    </section>
+
+    <!-- 7. Missions View -->
+    <section id="missionsView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">📜 일일 미션 & 업적</h2>
+      </div>
+      <div id="missionsContainer"></div>
+    </section>
+
+    <!-- 8. Admin Page View -->
+    <section id="adminView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">⚙️ 제국 관리자 대시보드</h2>
+      </div>
+
+      <div class="admin-card">
+        <div id="adminLoginForm">
+          <div style="text-align: center; padding: 20px;">
+            <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 10px;">⚙️ 개발자 도구는 로컬 전용입니다. 클라우드 동기화되지 않습니다.</p>
+            <button class="buy-btn" id="adminLoginSubmit" style="padding: 10px 24px;">🛠️ 개발자 모드 활성화</button>
+          </div>
+        </div>
+
+        <div id="adminDashboardContent" hidden>
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 16px;">🔒 로컬 전용 개발자 도구 — 클라우드 랭킹에 영향을 주지 않습니다.</p>
+          
+          <div class="field">
+            <label for="adminCustomClickInput">내 클릭 수 직접 설정 (수동 입력)</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="adminCustomClickInput" placeholder="원하는 클릭 수 입력 (예: 5000000)">
+              <button class="buy-btn" id="adminSetClickBtn" style="white-space: nowrap;">설정 적용</button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <button class="buy-btn" id="adminCheat1M">+1M 자금</button>
+            <button class="buy-btn" id="adminCheat10M">+10M 자금</button>
+            <button class="buy-btn" id="adminUnlockAll">모두 해금</button>
+          </div>
+
+          <h4 style="color: var(--gold-bright); margin: 20px 0 8px;">☁️ Supabase 동기화 & 클라우드 상태</h4>
+          
+          <div class="cloud-status-card" id="cloudStatusCard" style="margin-bottom: 14px;">
+            <div class="cloud-status-head">
+              <span class="cloud-status-pill tone-idle" id="cloudStatusPill">☁ 클라우드 대기 중</span>
+              <button class="ghost-btn cloud-status-refresh" id="cloudStatusRefreshBtn">재확인</button>
+            </div>
+            <p class="cloud-status-summary" id="cloudStatusSummary">아직 Supabase 연결 상태를 확인하지 않았어.</p>
+            <p class="cloud-status-detail" id="cloudStatusDetail">로그인, 저장, 친구 대전 룸 생성 중에 생긴 클라우드 오류도 여기에 표시돼.</p>
+            <div class="cloud-status-diagnostic" id="cloudStatusDiagnostic">진단 기록 없음</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Profile Management Page View -->
+    <section id="profileView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">👤 황제 프로필 관리</h2>
+      </div>
+
+      <div class="admin-card">
+        <!-- Avatar Selection -->
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div id="profileAvatarDisplay" style="font-size: 56px; line-height: 1; margin-bottom: 8px;">👑</div>
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 12px;">원하는 프로필 아이콘을 클릭하여 변경하세요</p>
+          <div id="avatarPickerContainer" style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;"></div>
+        </div>
+
+        <!-- Account Info (ID: read-only, Nickname: editable) -->
+        <div class="field">
+          <label for="profileIdInput">계정 아이디 (수정 불가)</label>
+          <input type="text" id="profileIdInput" readonly style="opacity: 0.7; cursor: not-allowed; background: rgba(0,0,0,0.3);">
+        </div>
+
+        <div class="field">
+          <label for="profileNicknameInput">닉네임 (명예의 전당 표시)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="profileNicknameInput" placeholder="새 닉네임 입력 (최대 12자)">
+            <button class="buy-btn" id="saveNicknameBtn" style="white-space: nowrap;">닉네임 저장</button>
+          </div>
+        </div>
+
+        <!-- Title Management in Profile -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">👑 보유 칭호 관리</h4>
+        <div id="profileTitlesList" class="titles-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-bottom: 20px;"></div>
+
+        <!-- Visual Effects Management in Profile -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">✨ 보유 제국 이펙트 관리</h4>
+        <div id="profileEffectsList" class="item-list" style="margin-bottom: 20px;"></div>
+
+        <!-- Statistics Overview -->
+        <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">📊 통치 기록 요약</h4>
+        <div id="profileStatsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; text-align: center;"></div>
+
+        <!-- Cloud Save Button -->
+        <div style="text-align: center; margin-top: 20px;">
+          <button class="buy-btn" id="profileCloudSaveBtn" style="background: rgba(40,80,180,0.25); border-color: rgba(60,100,200,0.5); color: #80b0ff;">☁️ 클라우드에 캐시 저장</button>
+          <p style="font-size: 11px; color: var(--parchment-dim); margin-top: 6px;">현재 데이터를 Supabase 클라우드에 즉시 저장합니다.</p>
+        </div>
+
+        <!-- Logout Button -->
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(212,175,55,0.2);">
+          <button class="buy-btn" id="profileLogoutBtn" style="background: rgba(180,40,40,0.25); border-color: rgba(200,60,60,0.5); color: #ff8080;">🚪 로그아웃</button>
+        </div>
+      </div>
+
+      <!-- Admin Section (jay0216 only) -->
+      <div id="profileAdminSection" class="admin-card" hidden style="margin-top: 16px; border: 1px solid rgba(212,175,55,0.5);">
+        <h4 style="color: var(--gold-bright); margin: 0 0 12px;">⚙️ 관리자 패널</h4>
+        <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 14px;">관리자 전용 메뉴입니다.</p>
+        <button class="buy-btn" id="profileGoAdminBtn">⚙️ 관리자 페이지 이동</button>
+      </div>
+    </section>
+
+  </main>
 
   <!-- Auth Modal -->
   <div class="modal-overlay" id="authModal" hidden>
@@ -261,8 +387,8 @@
 
       <div id="loginForm">
         <div class="field">
-          <label for="loginEmail">이메일</label>
-          <input id="loginEmail" type="email" autocomplete="email" placeholder="이메일 주소">
+          <label for="loginId">아이디</label>
+          <input id="loginId" type="text" autocomplete="username" placeholder="아이디">
         </div>
         <div class="field">
           <label for="loginPw">비밀번호</label>
@@ -278,12 +404,12 @@
           <input id="signupNickname" type="text" placeholder="명예의 전당에 표시될 이름">
         </div>
         <div class="field">
-          <label for="signupEmail">이메일</label>
-          <input id="signupEmail" type="email" autocomplete="email" placeholder="이메일 주소">
+          <label for="signupId">아이디</label>
+          <input id="signupId" type="text" autocomplete="username" placeholder="3자 이상">
         </div>
         <div class="field">
           <label for="signupPw">비밀번호</label>
-          <input id="signupPw" type="password" autocomplete="new-password" placeholder="비밀번호 6자 이상">
+          <input id="signupPw" type="password" autocomplete="new-password" placeholder="비밀번호 4자 이상">
         </div>
         <div class="field">
           <label for="signupPw2">비밀번호 확인</label>
@@ -310,55 +436,39 @@
         </select>
       </div>
       <div class="field">
-        <label for="feedbackText">내용</label>
-        <textarea id="feedbackText" rows="4" placeholder="하고 싶은 말을 자유롭게 적어 주세요"></textarea>
+        <label for="feedbackContent">제안 내용 (제출 시 🎁 +10,000 클릭 지급!)</label>
+        <textarea id="feedbackContent" rows="4" placeholder="더 재미있는 게임을 위한 의견이나 발견하신 버그를 적어주세요."></textarea>
       </div>
-      <p id="feedbackError" style="color:#ff9d9d; font-size:12px;"></p>
-      <button id="feedbackSubmit">제출</button>
-      <button class="modal-close" id="feedbackClose">닫기</button>
+      <p id="feedbackError" style="color: #ff9d9d; font-size: 12px;"></p>
+      <button class="modal-submit" id="feedbackSubmitBtn">의견 제출하고 포상금 받기</button>
+      <button class="modal-close" id="feedbackModalClose">닫기</button>
     </div>
   </div>
 
-  <!-- Offline Harvest Modal -->
-  <div class="modal-overlay" id="harvestModal" hidden>
-    <div class="modal-card">
-      <h3 style="margin: 0 0 8px; color: var(--gold-bright);">🌙 오프라인 수확</h3>
-      <div id="harvestContent">자원을 계산 중...</div>
-      <button id="harvestCloseBtn">수확하기</button>
-    </div>
-  </div>
-
-  <!-- Admin Panel (dev mode) -->
-  <div class="modal-overlay" id="adminPanel" hidden>
-    <div class="modal-card">
-      <h3 style="margin: 0 0 14px; color: var(--gold-bright);">🛠️ 개발자 패널</h3>
-      <div id="adminContent">
-        <label for="adminDevClicks">클릭 수 설정</label>
-        <div style="display:flex;gap:6px;">
-          <input id="adminDevClicks" type="text" placeholder="ex) 1e15">
-          <button id="adminSetClicksBtn">설정</button>
-        </div>
-        <label for="adminDevArmyKey">군대 추가 (키)</label>
-        <div style="display:flex;gap:6px;">
-          <input id="adminDevArmyKey" type="text" placeholder="army_test">
-          <button id="adminAddArmyBtn">추가</button>
-        </div>
-        <label for="adminDevRelicKey">유물 추가 (키)</label>
-        <div style="display:flex;gap:6px;">
-          <input id="adminDevRelicKey" type="text" placeholder="relic_test">
-          <button id="adminAddRelicBtn">추가</button>
-        </div>
-        <button id="adminGrantAllRelicsBtn">모든 유물 지급</button>
-        <hr style="border-color:var(--border);margin:12px 0;">
-        <button id="adminResetGameBtn" style="background:var(--danger);">게임 초기화</button>
+  <!-- Offline Harvest Welcome Modal -->
+  <div class="modal-overlay" id="offlineHarvestModal" hidden>
+    <div class="modal-card" style="text-align: center;">
+      <div style="font-size: 42px; margin-bottom: 8px;">🌙</div>
+      <h3 style="margin: 0 0 8px; color: var(--gold-bright); font-size: 20px;">제국 복귀를 환영합니다!</h3>
+      <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 16px;">
+        자리를 비우신 동안 백그라운드 행정 군단이 자금을 수확했습니다.
+      </p>
+      
+      <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--gold); border-radius: 14px; padding: 16px; margin-bottom: 18px;">
+        <div style="font-size: 12px; color: var(--parchment-dim); margin-bottom: 4px;">⏱️ 자리를 비운 시간: <span id="offlineTimeDisplay" style="color: var(--gold-bright); font-weight: 700;"></span></div>
+        <div style="font-size: 24px; font-weight: 900; color: var(--gold-bright);" id="offlineEarnedDisplay">+0 클릭</div>
+        <div style="font-size: 11px; color: var(--parchment-dim); margin-top: 4px;" id="offlineCpsRateDisplay"></div>
       </div>
-      <button class="modal-close" id="adminPanelClose">닫기</button>
+
+      <button class="modal-submit" id="offlineClaimBtn" style="font-size: 15px; padding: 12px;">🎁 수확금 수령 및 통치 시작</button>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/game-config.js"></script>
-  <script src="js/supabase-sync.js"></script>
-  <script src="js/app.js"></script>
+</div>
+
+
+<!-- game-config.js: 제국 단계, 아이템, 수치 등 모든 게임 설정 관리 파일 (app.js 이전에 반드시 로드) -->
+<script src="js/game-config.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

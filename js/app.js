@@ -23,7 +23,33 @@ function openDB() {
   });
 }
 
-// hashPassword/verifyPassword removed — now using Supabase Auth (email/password)
+async function hashPassword(pw) {
+  // PBKDF2 with random salt, 100k iterations
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+  const saltB64 = btoa(String.fromCharCode(...salt));
+  const hashB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+  return `pbkdf2:${saltB64}:${hashB64}`;
+}
+
+async function verifyPassword(pw, storedHash) {
+  if (storedHash && storedHash.startsWith('pbkdf2:')) {
+    const parts = storedHash.split(':');
+    if (parts.length !== 3) return false;
+    const salt = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
+    const expectedHash = parts[2];
+    const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+    const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+    const computedB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+    return computedB64 === expectedHash;
+  }
+  // Legacy SHA-256 support (migration path)
+  const enc = new TextEncoder().encode(pw);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  const legacyHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return legacyHash === storedHash;
+}
 
 async function getAccount(id) {
   try {
@@ -112,10 +138,6 @@ async function saveFeedback(fb) {
 }
 
 async function getSession() {
-  if (typeof supabaseGetCurrentUserId === 'function') {
-    const userId = await supabaseGetCurrentUserId();
-    if (userId) return { id: userId };
-  }
   const data = localStorage.getItem('ck_session');
   return data ? JSON.parse(data) : null;
 }
@@ -133,16 +155,14 @@ function getAccountFreshness(account) {
 }
 
 async function loadPreferredAccount(id) {
-  // Try Supabase first (authenticated). The id param is kept for backward compat
-  // but the authoritative source is the authenticated user.
-  if (typeof supabaseLoadAccount === 'function') {
-    const cloudAccount = await supabaseLoadAccount();
-    if (cloudAccount) {
-      await setAccount(cloudAccount);
-      return cloudAccount;
-    }
+  let cloudAccount = null;
+  if (typeof supabaseFetchAccount === 'function') {
+    cloudAccount = await supabaseFetchAccount(id);
   }
-  // Fallback to IndexedDB (legacy local accounts)
+  if (cloudAccount) {
+    await setAccount(cloudAccount);
+    return cloudAccount;
+  }
   return await getAccount(id);
 }
 
@@ -161,7 +181,6 @@ function saveEmergencySnapshot() {
       unlockedTitles: state.unlockedTitles,
       warRecords: state.warRecords,
       missionProgress: state.missionProgress,
-      backgroundUrl: state.backgroundUrl,
       lastOfflineTime: Date.now(),
       savedAt: Date.now()
     };
@@ -194,7 +213,6 @@ function applyEmergencySnapshot(account) {
       account.unlockedTitles = snap.unlockedTitles || account.unlockedTitles;
       account.warRecords = snap.warRecords || account.warRecords;
       account.missionProgress = snap.missionProgress || account.missionProgress;
-      account.backgroundUrl = snap.backgroundUrl || account.backgroundUrl;
       account.updatedAt = snap.savedAt;
       applied = true;
     }
@@ -221,7 +239,6 @@ const state = {
   equippedTitle: 'title_novice',
   unlockedTitles: ['title_novice'],
   avatar: '👑',
-  backgroundUrl: '',
   warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
   missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
   lastOfflineTime: Date.now(),
@@ -232,14 +249,6 @@ const state = {
 const listeners = [];
 function subscribeState(fn) { listeners.push(fn); }
 function notifyStateChange() { listeners.forEach(fn => fn(state)); }
-
-function applyBackground(url) {
-  if (url && url.trim()) {
-    document.body.style.background = `#000 url(${url}) center/cover no-repeat`;
-  } else {
-    document.body.style.background = '';
-  }
-}
 
 function getCloudStateSnapshot() {
   if (typeof getCloudSyncState === 'function') return getCloudSyncState();
@@ -502,8 +511,6 @@ let myGeneratedRoomCode = null;
 let activeRoomCode = null;
 let currentRoomRole = null; // 'host' or 'guest' or null (AI)
 let roomWaitingPollInterval = null;
-let battleMatchedAt = null;
-let battleTickBusy = false;
 
 function generateRoomCode() {
   myGeneratedRoomCode = String(Math.floor(1000 + Math.random() * 9000));
@@ -518,61 +525,41 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
   enemyClicksInBattle = 0;
   battleTimeLeft = 10;
 
-  // Room battle: calculate initial time from shared matched_at timestamp
-  if (battleMatchedAt) {
-    const elapsed = Math.floor((Date.now() - battleMatchedAt) / 1000);
-    battleTimeLeft = Math.max(0, 10 - elapsed);
-  }
-
   document.getElementById('battleSetupPanel').hidden = true;
   document.getElementById('battleArenaPanel').hidden = false;
 
   document.getElementById('enemyNameLabel').textContent = enemyInfo.name;
   document.getElementById('enemyCastleLabel').textContent = enemyInfo.name;
   document.getElementById('enemyPowerLabel').textContent = enemyInfo.power.toLocaleString();
-  document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
+  document.getElementById('battleTimerDisplay').textContent = '10s';
 
   updateFrontlineVisual();
 
   if (battleInterval) clearInterval(battleInterval);
   battleInterval = setInterval(async () => {
-    if (battleMatchedAt) {
-      const elapsed = Math.floor((Date.now() - battleMatchedAt) / 1000);
-      battleTimeLeft = Math.max(0, 10 - elapsed);
-    } else {
-      battleTimeLeft--;
-    }
-
-    if (battleTimeLeft <= 0) {
-      endBattle();
-      return;
-    }
-
+    battleTimeLeft--;
     document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
     // Real-time synchronization for room battles via Supabase
     if (activeRoomCode && typeof supabaseFetchRoom === 'function' && typeof supabaseSubmitBattleTaps === 'function') {
-      if (battleTickBusy) return;
-      battleTickBusy = true;
-      try {
-        // Sync my taps to Cloud
-        await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
-        // Fetch opponent's taps from Cloud
-        const r = await supabaseFetchRoom(activeRoomCode);
-        if (r) {
-          enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
-        }
-      } finally {
-        battleTickBusy = false;
+      // Sync my taps to Cloud
+      await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+      // Fetch opponent's taps from Cloud
+      const r = await supabaseFetchRoom(activeRoomCode);
+      if (r) {
+        enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
       }
     } else {
-      // AI enemy taps: scales with player CPS
-      const cpsFactor = Math.min(state.cps || 0, 2000);
-      const simulatedTapRate = Math.floor(6 + cpsFactor * 0.02 + Math.random() * (4 + cpsFactor * 0.015));
+      // Simulated AI enemy taps
+      const simulatedTapRate = Math.floor(3 + Math.random() * 4);
       enemyClicksInBattle += simulatedTapRate;
     }
 
     updateFrontlineVisual();
+
+    if (battleTimeLeft <= 0) {
+      endBattle();
+    }
   }, 1000);
 }
 
@@ -580,6 +567,11 @@ function registerMyBattleTap() {
   if (battleTimeLeft <= 0) return;
   myClicksInBattle += 1;
   updateFrontlineVisual();
+
+  // Instantly send tap count to room
+  if (activeRoomCode && typeof supabaseSubmitBattleTaps === 'function') {
+    supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+  }
 }
 
 function updateFrontlineVisual() {
@@ -617,10 +609,8 @@ function endBattle() {
   checkTitleUnlocks();
   notifyStateChange();
 
-  battleTickBusy = false;
   activeRoomCode = null;
   currentRoomRole = null;
-  battleMatchedAt = null;
 
   setTimeout(() => {
     document.getElementById('battleSetupPanel').hidden = false;
@@ -702,7 +692,7 @@ async function renderRankingView(forceRefresh = false) {
       cloudList.forEach(cloudEntry => {
         const idx = leaderboard.findIndex(e => e.id === cloudEntry.id);
         if (idx >= 0) {
-          if (bigGt(cloudEntry.clicks || "0", leaderboard[idx].clicks || "0")) {
+          if ((cloudEntry.clicks || 0) > (leaderboard[idx].clicks || 0)) {
             leaderboard[idx] = cloudEntry;
           }
         } else {
@@ -915,11 +905,6 @@ function switchView(viewName) {
     return;
   }
 
-  // End battle if navigating away during a match
-  if (battleInterval) {
-    endBattle();
-  }
-
   // Stop shooter mini-game loop if navigating away
   if (viewName !== 'shooter' && typeof shooterActive !== 'undefined' && shooterActive) {
     shooterActive = false;
@@ -937,7 +922,7 @@ function switchView(viewName) {
   }
 
   state.currentView = viewName;
-  const views = ['landingView', 'clickerView', 'armyView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
+  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
   views.forEach(vId => {
     const el = document.getElementById(vId);
     if (el) el.hidden = true;
@@ -1107,59 +1092,6 @@ function renderProfileView() {
     });
   }
 
-  // Background URL
-  const bgInput = document.getElementById('profileBgInput');
-  const bgPreview = document.getElementById('bgPreview');
-  const applyBgBtn = document.getElementById('applyBgBtn');
-  const removeBgBtn = document.getElementById('removeBgBtn');
-
-  if (bgInput && document.activeElement !== bgInput) {
-    bgInput.value = state.backgroundUrl || '';
-  }
-
-  if (bgPreview) {
-    if (state.backgroundUrl && state.backgroundUrl.trim()) {
-      bgPreview.style.backgroundImage = `url(${state.backgroundUrl})`;
-      bgPreview.classList.add('has-bg');
-    } else {
-      bgPreview.style.backgroundImage = '';
-      bgPreview.classList.remove('has-bg');
-    }
-  }
-
-  if (applyBgBtn) {
-    applyBgBtn.onclick = () => {
-      const url = bgInput ? bgInput.value.trim() : '';
-      state.backgroundUrl = url;
-      applyBackground(url);
-      if (bgPreview) {
-        if (url) {
-          bgPreview.style.backgroundImage = `url(${url})`;
-          bgPreview.classList.add('has-bg');
-        } else {
-          bgPreview.style.backgroundImage = '';
-          bgPreview.classList.remove('has-bg');
-        }
-      }
-      if (state.currentUser) scheduleSave();
-      showToast(url ? '🖼️ 배경 이미지가 적용되었습니다!' : '배경이 제거되었습니다.');
-    };
-  }
-
-  if (removeBgBtn) {
-    removeBgBtn.onclick = () => {
-      state.backgroundUrl = '';
-      if (bgInput) bgInput.value = '';
-      if (bgPreview) {
-        bgPreview.style.backgroundImage = '';
-        bgPreview.classList.remove('has-bg');
-      }
-      applyBackground('');
-      if (state.currentUser) scheduleSave();
-      showToast('배경이 제거되었습니다.');
-    };
-  }
-
   // Render Stats Grid
   if (statsGrid) {
     const clicks = getClicks();
@@ -1259,7 +1191,7 @@ function spawnEmojiRain(cps) {
 function startEmojiRain(cps) {
   stopEmojiRain();
   if (cps <= 0) return;
-  const interval = Math.max(10, 3000 / (1 + cps * 0.3));
+  const interval = Math.max(100, 3000 / (1 + cps * 0.3));
   emojiRainTimer = setInterval(() => spawnEmojiRain(cps), interval);
   // Spawn a few immediately
   for (let i = 0; i < Math.min(5, Math.ceil(cps / 10)); i++) {
@@ -1767,7 +1699,6 @@ function checkOfflineHarvest(lastTime) {
     state.lastOfflineTime = now;
 
     addClicks(reward);
-    if (state.currentUser) scheduleSave();
 
     const timeEl = document.getElementById('offlineTimeDisplay');
     const earnedEl = document.getElementById('offlineEarnedDisplay');
@@ -1806,14 +1737,13 @@ async function flushSave() {
     account.unlockedTitles = state.unlockedTitles;
     account.warRecords = state.warRecords;
     account.missionProgress = state.missionProgress;
-    account.backgroundUrl = state.backgroundUrl;
     account.lastOfflineTime = state.lastOfflineTime;
     account.battlePower = calcBattlePower();
     account.updatedAt = Date.now(); // 수정: 로컬 캐시에도 최신 저장 시각을 남겨 클라우드와 비교 가능하게 한다.
     await setAccount(account);
 
-    if (typeof supabaseSaveAccount === 'function') {
-      const ok = await supabaseSaveAccount(account);
+    if (typeof supabaseSyncAccount === 'function') {
+      const ok = await supabaseSyncAccount(account);
       if (ok) {
         clearPendingSync();
       } else {
@@ -1950,41 +1880,30 @@ async function handleCloudRefresh() {
 }
 
 async function handleLogin() {
-  const email = document.getElementById('loginEmail').value.trim();
+  const id = document.getElementById('loginId').value.trim();
   const pw = document.getElementById('loginPw').value;
   const errEl = document.getElementById('loginError');
   errEl.textContent = '';
-  if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력해 주세요.'; return; }
+  if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  if (typeof supabaseSignIn !== 'function') {
-    errEl.textContent = 'Supabase 연결을 확인해 주세요.';
-    return;
+  const account = await loadPreferredAccount(id);
+  if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+
+  const valid = await verifyPassword(pw, account.passwordHash);
+  if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+
+  // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
+  if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
+    account.passwordHash = await hashPassword(pw);
+    await setAccount(account);
   }
-
-  const result = await supabaseSignIn(email, pw);
-  if (result.error) {
-    errEl.textContent = result.error.message === 'Invalid login credentials'
-      ? '이메일 또는 비밀번호가 올바르지 않아요.'
-      : `로그인 실패: ${result.error.message}`;
-    return;
-  }
-
-  const account = await supabaseLoadAccount();
-  if (!account) {
-    errEl.textContent = '계정 데이터를 불러오지 못했어요. 새로 가입해 주세요.';
-    await supabaseSignOut();
-    return;
-  }
-
-  // Cache locally
-  await setAccount(account);
 
   if (applyEmergencySnapshot(account)) {
     await setAccount(account);
     scheduleSave();
   }
 
-  state.currentUser = { id: account.user_id, nickname: account.nickname, clicks: String(account.clicks || 0) };
+  state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
   state.avatar = account.avatar || '👑';
   state.armies = account.armies || {};
   state.relics = account.relics || {};
@@ -1995,16 +1914,14 @@ async function handleLogin() {
   state.unlockedTitles = account.unlockedTitles || ['title_novice'];
   state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
   state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
-  state.backgroundUrl = account.backgroundUrl || '';
-  state.lastOfflineTime = account.lastOfflineTime || Date.now();
-
+  
   recalculateCPS();
   recalculateMultipliers();
 
-  applyBackground(state.backgroundUrl);
+  // Process Offline Background CPS Harvest Modal
   checkOfflineHarvest(account.lastOfflineTime);
 
-  await setSession(account.user_id);
+  await setSession(account.id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -2013,64 +1930,40 @@ async function handleLogin() {
 
 async function handleSignup() {
   const nickname = document.getElementById('signupNickname').value.trim();
-  const email = document.getElementById('signupEmail').value.trim();
+  const id = document.getElementById('signupId').value.trim();
   const pw = document.getElementById('signupPw').value;
   const pw2 = document.getElementById('signupPw2').value;
   const errEl = document.getElementById('signupError');
   errEl.textContent = '';
 
-  if (!nickname || !email || !pw || !pw2) { errEl.textContent = '모든 항목을 입력해 주세요.'; return; }
+  if (!nickname || !id || !pw || !pw2) { errEl.textContent = '모든 항목을 입력해 주세요.'; return; }
   if (nickname.length > 12) { errEl.textContent = '닉네임은 12자 이하로 입력해 주세요.'; return; }
-  if (!email.includes('@')) { errEl.textContent = '올바른 이메일 주소를 입력해 주세요.'; return; }
-  if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상으로 입력해 주세요.'; return; }
+  if (id.length < 3) { errEl.textContent = '아이디는 3자 이상으로 입력해 주세요.'; return; }
+  if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
 
-  if (typeof supabaseSignUp !== 'function') {
-    errEl.textContent = 'Supabase 연결을 확인해 주세요.';
-    return;
-  }
+  const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
+  if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
-  const result = await supabaseSignUp(email, pw, nickname);
-  if (result.error) {
-    errEl.textContent = `가입 실패: ${result.error.message}`;
-    return;
-  }
-
-  // If email confirmation is required, Supabase sends a confirmation email.
-  // For now, proceed immediately (user_override_confirmation or disable confirmation in Supabase settings).
-  const userId = await supabaseGetCurrentUserId();
-  if (!userId) {
-    errEl.textContent = '자동 로그인에 실패했어요. 로그인 페이지에서 로그인해 주세요.';
-    return;
-  }
-
+  const passwordHash = await hashPassword(pw);
   const account = {
-    user_id: userId,
-    nickname,
-    clicks: "0",
-    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {},
-    equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
+    id, nickname, passwordHash, clicks: 0,
+    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
     warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
     missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
-    battlePower: 0, wins: 0,
     lastOfflineTime: Date.now(),
-    updatedAt: Date.now()
+    createdAt: Date.now(),
+    updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
   };
 
-  // Save to Supabase first, then cache locally
-  if (typeof supabaseSaveAccount === 'function') {
-    const ok = await supabaseSaveAccount(account);
-    if (!ok) {
-      errEl.textContent = '계정 저장에 실패했어요. 다시 시도해 주세요.';
-      await supabaseSignOut();
-      return;
-    }
-  }
   await setAccount(account);
+  if (typeof supabaseSyncAccount === 'function') {
+    await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+  }
 
-  state.currentUser = { id: userId, nickname, clicks: "0" };
+  state.currentUser = { id, nickname, clicks: "0" };
   state.localClicks = "0";
-  await setSession(userId);
+  await setSession(id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -2083,9 +1976,6 @@ async function handleLogout() {
   state.currentUser = null;
   state.localClicks = 0;
   await clearSession();
-  if (typeof supabaseSignOut === 'function') {
-    supabaseSignOut();
-  }
   renderTopbarActions();
   switchView('landing');
   showToast('로그아웃 됐어요.');
@@ -2102,9 +1992,6 @@ function setupEventListeners() {
       if (state.currentView === 'clicker') {
         e.preventDefault();
         handleSealClick(null);
-      } else if (state.currentView === 'battle' && battleTimeLeft > 0) {
-        e.preventDefault();
-        registerMyBattleTap();
       }
     }
   });
@@ -2217,7 +2104,6 @@ function setupEventListeners() {
             if (r && r.status === 'matched') {
               clearInterval(roomWaitingPollInterval);
               roomWaitingPollInterval = null;
-              battleMatchedAt = r.matchedAt || Date.now();
               showToast(`⚔️ [${r.guestNickname || '친구'}]님 입장 완료! 대전을 시작합니다!`);
               startBattle({
                 name: `👑 ${r.guestNickname || '친구 영주'}의 군대`,
@@ -2267,11 +2153,10 @@ function setupEventListeners() {
 
           // Mark room as joined in Supabase
           if (typeof supabaseJoinRoom === 'function') {
-            const matchedAtStr = await supabaseJoinRoom(inputCode, {
+            await supabaseJoinRoom(inputCode, {
               id: state.currentUser.id,
               nickname: state.currentUser.nickname
             });
-            battleMatchedAt = matchedAtStr ? new Date(matchedAtStr).getTime() : Date.now();
           }
 
           const enemyInfo = {
@@ -2316,22 +2201,26 @@ function setupEventListeners() {
   });
 
   // Auth Modals
-  const el = id => document.getElementById(id);
-  const setClick = (id, fn) => { const e = el(id); if (e) e.onclick = fn; };
-  setClick('tabLogin', () => setModalTab('login'));
-  setClick('tabSignup', () => setModalTab('signup'));
-  setClick('loginSubmit', handleLogin);
-  setClick('signupSubmit', handleSignup);
-  setClick('authModalClose', () => closeModal('authModal'));
+  document.getElementById('tabLogin').onclick = () => setModalTab('login');
+  document.getElementById('tabSignup').onclick = () => setModalTab('signup');
+  document.getElementById('loginSubmit').onclick = handleLogin;
+  document.getElementById('signupSubmit').onclick = handleSignup;
+  document.getElementById('guestSignupBtn').onclick = () => openModal('authModal');
+  document.getElementById('authModalClose').onclick = () => closeModal('authModal');
 
-  setClick('feedbackSubmit', submitFeedback);
+  // Feedback Modal
+  document.getElementById('feedbackNavBtn').onclick = () => openModal('feedbackModal');
+  document.getElementById('feedbackSubmitBtn').onclick = submitFeedback;
+  document.getElementById('feedbackModalClose').onclick = () => closeModal('feedbackModal');
 
   // Developer Tools - self-only debug functions (no cloud sync)
-  setClick('adminLoginSubmit', toggleDevMode);
-  setClick('adminSetClickBtn', handleAdminCustomClickSet);
-  setClick('adminCheat1M', () => giveAdminGold(1000000));
-  setClick('adminCheat10M', () => giveAdminGold(10000000));
-  setClick('adminUnlockAll', unlockAllForAdmin);
+  document.getElementById('adminLoginSubmit').onclick = () => {
+    toggleDevMode();
+  };
+  document.getElementById('adminSetClickBtn').onclick = handleAdminCustomClickSet;
+  document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
+  document.getElementById('adminCheat10M').onclick = () => giveAdminGold(10000000);
+  document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
 
   // Offline Harvest Claim Button
   const offlineClaimBtn = document.getElementById('offlineClaimBtn');
@@ -2354,9 +2243,7 @@ function setupEventListeners() {
         if (state.currentUser) scheduleSave();
       }
     } else if (document.visibilityState === 'hidden' && state.currentUser) {
-      if (!activeRoomCode) {
-        state.lastOfflineTime = Date.now();
-      }
+      state.lastOfflineTime = Date.now();
       saveEmergencySnapshot();
       flushSave();
     }
@@ -2401,9 +2288,7 @@ async function init() {
   const cloudRefreshBtn = document.getElementById('cloudStatusRefreshBtn');
   if (cloudRefreshBtn) cloudRefreshBtn.onclick = handleCloudRefresh;
 
-  if (typeof supabaseInit === 'function') {
-    supabaseInit();
-  } else if (typeof supabaseRunDiagnostics === 'function') {
+  if (typeof supabaseRunDiagnostics === 'function') {
     supabaseRunDiagnostics();
   }
 
@@ -2427,12 +2312,9 @@ async function init() {
       state.unlockedTitles = account.unlockedTitles || ['title_novice'];
       state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
       state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
-      state.backgroundUrl = account.backgroundUrl || '';
-      state.lastOfflineTime = account.lastOfflineTime || Date.now();
       recalculateCPS();
       recalculateMultipliers();
 
-      applyBackground(state.backgroundUrl);
       // Process Offline Background CPS Harvest → show modal popup
       checkOfflineHarvest(account.lastOfflineTime);
     } else {
