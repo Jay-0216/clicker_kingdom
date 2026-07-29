@@ -2316,26 +2316,22 @@ function setupEventListeners() {
   });
 
   // Auth Modals
-  document.getElementById('tabLogin').onclick = () => setModalTab('login');
-  document.getElementById('tabSignup').onclick = () => setModalTab('signup');
-  document.getElementById('loginSubmit').onclick = handleLogin;
-  document.getElementById('signupSubmit').onclick = handleSignup;
-  document.getElementById('guestSignupBtn').onclick = () => openModal('authModal');
-  document.getElementById('authModalClose').onclick = () => closeModal('authModal');
+  const el = id => document.getElementById(id);
+  const setClick = (id, fn) => { const e = el(id); if (e) e.onclick = fn; };
+  setClick('tabLogin', () => setModalTab('login'));
+  setClick('tabSignup', () => setModalTab('signup'));
+  setClick('loginSubmit', handleLogin);
+  setClick('signupSubmit', handleSignup);
+  setClick('authModalClose', () => closeModal('authModal'));
 
-  // Feedback Modal
-  document.getElementById('feedbackNavBtn').onclick = () => openModal('feedbackModal');
-  document.getElementById('feedbackSubmitBtn').onclick = submitFeedback;
-  document.getElementById('feedbackModalClose').onclick = () => closeModal('feedbackModal');
+  setClick('feedbackSubmit', submitFeedback);
 
   // Developer Tools - self-only debug functions (no cloud sync)
-  document.getElementById('adminLoginSubmit').onclick = () => {
-    toggleDevMode();
-  };
-  document.getElementById('adminSetClickBtn').onclick = handleAdminCustomClickSet;
-  document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
-  document.getElementById('adminCheat10M').onclick = () => giveAdminGold(10000000);
-  document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
+  setClick('adminLoginSubmit', toggleDevMode);
+  setClick('adminSetClickBtn', handleAdminCustomClickSet);
+  setClick('adminCheat1M', () => giveAdminGold(1000000));
+  setClick('adminCheat10M', () => giveAdminGold(10000000));
+  setClick('adminUnlockAll', unlockAllForAdmin);
 
   // Offline Harvest Claim Button
   const offlineClaimBtn = document.getElementById('offlineClaimBtn');
