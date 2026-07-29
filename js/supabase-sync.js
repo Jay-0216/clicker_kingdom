@@ -176,6 +176,9 @@ async function supabaseSyncAccount(account) {
   const client = getSupabaseClient();
   if (!client) return false;
 
+  // Ensure all numeric values sent to Supabase are finite (JSON.stringify converts Infinity to null)
+  const safe = (v, fallback = 0) => (typeof v === 'number' && isFinite(v) ? v : fallback);
+
   updateCloudSyncState({
     tone: 'syncing',
     summary: '클라우드에 저장 중이야...',
@@ -189,7 +192,7 @@ async function supabaseSyncAccount(account) {
         id: account.id,
         nickname: account.nickname,
 ***REMOVED***
-        clicks: account.clicks || 0,
+        clicks: safe(account.clicks, 0),
         armies: account.armies || {},
         relics: account.relics || {},
         effects: account.effects || [],
@@ -199,7 +202,7 @@ async function supabaseSyncAccount(account) {
         unlocked_titles: account.unlockedTitles || ['title_novice'],
         war_records: account.warRecords || {},
         mission_progress: account.missionProgress || {},
-        last_offline_time: account.lastOfflineTime || Date.now(),
+        last_offline_time: safe(account.lastOfflineTime, Date.now()),
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' });
 
@@ -223,9 +226,9 @@ async function supabaseSyncAccount(account) {
       .upsert({
         id: account.id,
         nickname: account.nickname,
-        clicks: account.clicks || 0,
-        battle_power: account.battlePower || 0,
-        wins: (account.warRecords && account.warRecords.wins) || 0,
+        clicks: safe(account.clicks, 0),
+        battle_power: safe(account.battlePower, 0),
+        wins: safe(account.warRecords && account.warRecords.wins, 0),
         title: account.equippedTitle || 'title_novice'
       }, { onConflict: 'id' });
 
