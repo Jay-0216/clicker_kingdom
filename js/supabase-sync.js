@@ -227,7 +227,8 @@ async function supabaseSyncAccount(account) {
         clicks: account.clicks || "0",
         battle_power: account.battlePower || 0,
         wins: (account.warRecords && account.warRecords.wins) || 0,
-        title: account.equippedTitle || 'title_novice'
+        title: account.equippedTitle || 'title_novice',
+        last_online: new Date().toISOString()
       }, { onConflict: 'id' });
 
     if (leaderboardError) {
@@ -298,7 +299,8 @@ async function supabaseFetchLeaderboard() {
       clicks: item.clicks || 0,
       battlePower: item.battle_power || 0,
       wins: item.wins || 0,
-      title: item.title || '성주'
+      title: item.title || '성주',
+      lastOnline: item.last_online || null
     }));
   } catch (err) {
     console.warn("Supabase leaderboard fetch exception:", err);

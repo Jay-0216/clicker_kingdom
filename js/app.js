@@ -733,11 +733,14 @@ function _renderRankingList(listEl, leaderboard) {
     const tierInfo = getTierInfo(entry.clicks || 0);
     const tierDisplay = entry.tierName || (tierInfo.beyondMax ? '???' : tierInfo.name);
 
+    const online = entry.lastOnline && (Date.now() - new Date(entry.lastOnline).getTime() < 60000);
+    const onlineDot = online ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;margin-right:4px;vertical-align:middle;box-shadow:0 0 4px #4ade80;" title="온라인"></span>' : '';
+
     return `
       <div class="ranking-row ${isMe ? 'me' : ''}">
         <span class="rank-badge ${rank <= 3 ? 'top' + rank : ''}">${crownGlyph(rank)}</span>
         <div class="rank-nickname">
-          <span>${escapeHtml(entry.nickname || '무명 영주')}</span>
+          <span>${onlineDot}${escapeHtml(entry.nickname || '무명 영주')}</span>
           <span class="rank-title-chip">${escapeHtml(displayTitle)}</span>
           <span style="font-size:11px; opacity:0.65; margin-left:6px; color: var(--gold-bright);">${escapeHtml(tierDisplay)}</span>
         </div>
