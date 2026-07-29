@@ -290,9 +290,9 @@ const MULTIPLIER_RELICS = [
     name: '제왕의 옥새',
     icon: '👑',
     cost: 10000000000,
-    addClick: 0,
-    mult: 2,
-    desc: '수동 클릭 자금 2배 증폭'
+    addClick: 50,
+    mult: 1,
+    desc: '수동 클릭 자금 +50추가'
   }
   
 ];
