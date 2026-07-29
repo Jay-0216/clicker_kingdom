@@ -331,11 +331,8 @@ function buyOfflineArmy(itemId) {
 }
 
 function getRelicCost(relic, count) {
-  const clicks = getClicks();
-  const idx = MULTIPLIER_RELICS.findIndex(r => r.id === relic.id);
-  const fraction = 0.05 + (idx / (MULTIPLIER_RELICS.length - 1)) * 0.25;
-  const num = Math.round(fraction * 100);
-  return bigMax(bigDiv(bigMul(clicks, String(num)), "100"), "1");
+  const pow10 = bigPow10AsString(count * count);
+  return bigMul(String(relic.cost), pow10);
 }
 
 function buyRelic(relicId) {
