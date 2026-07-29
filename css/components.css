@@ -209,6 +209,38 @@
   box-shadow: 0 0 8px rgba(241,206,106,0.4);
 }
 
+.room-code-card {
+  background: rgba(28, 31, 66, 0.8);
+  border: 1px solid var(--gold);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 20px;
+  backdrop-filter: blur(8px);
+}
+.room-code-label { font-size: 13px; color: var(--parchment-dim); margin-bottom: 8px; }
+.room-code-value {
+  font-family: 'Cinzel', serif;
+  font-size: 42px;
+  font-weight: 900;
+  color: var(--gold-bright);
+  text-shadow: 0 0 20px rgba(241,206,106,0.5);
+  letter-spacing: 8px;
+  margin: 8px 0;
+}
+.room-code-hint { font-size: 12px; color: var(--parchment-dim); }
+.join-room-section {
+  background: rgba(28, 31, 66, 0.5);
+  border: 1px solid rgba(212,175,55,0.2);
+  border-radius: 16px;
+  padding: 18px;
+  margin-top: 8px;
+}
+.join-room-label { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--gold-bright); }
+.join-room-row { display: flex; gap: 10px; }
+.battle-vs-title { font-size: 14px; color: var(--parchment-dim); }
+.battle-power-display { font-size: 12px; color: var(--parchment-dim); opacity: 0.8; }
+
 /* ---------- Battle Arena & Tug-of-War Fill Bar ---------- */
 .battle-arena {
   display: flex;
@@ -538,6 +570,32 @@
 @keyframes toastFadeIn {
   from { opacity: 0; transform: translate(-50%, 15px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ---------- Profile Card ---------- */
+.profile-card {
+  background: rgba(28, 31, 66, 0.75);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 20px;
+  padding: 24px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.bg-preview {
+  width: 100%;
+  height: 120px;
+  border-radius: 12px;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  margin-top: 8px;
+  background: rgba(0,0,0,0.3) center/cover no-repeat;
+  transition: background-image 0.3s ease;
+}
+.bg-preview.has-bg {
+  border-color: var(--gold-bright);
 }
 
 /* ---------- Cloud Sync Status ---------- */

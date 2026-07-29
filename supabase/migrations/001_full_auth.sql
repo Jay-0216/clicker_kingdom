@@ -57,3 +57,6 @@ ALTER TABLE leaderboard ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT 
 -- 7. (선택) accounts에 created_at / updated_at
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+-- 8. 프로필 배경 이미지 URL 컬럼
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS background_url text DEFAULT '';

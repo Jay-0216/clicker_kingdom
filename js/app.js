@@ -161,6 +161,7 @@ function saveEmergencySnapshot() {
       unlockedTitles: state.unlockedTitles,
       warRecords: state.warRecords,
       missionProgress: state.missionProgress,
+      backgroundUrl: state.backgroundUrl,
       lastOfflineTime: Date.now(),
       savedAt: Date.now()
     };
@@ -193,6 +194,7 @@ function applyEmergencySnapshot(account) {
       account.unlockedTitles = snap.unlockedTitles || account.unlockedTitles;
       account.warRecords = snap.warRecords || account.warRecords;
       account.missionProgress = snap.missionProgress || account.missionProgress;
+      account.backgroundUrl = snap.backgroundUrl || account.backgroundUrl;
       account.updatedAt = snap.savedAt;
       applied = true;
     }
@@ -219,6 +221,7 @@ const state = {
   equippedTitle: 'title_novice',
   unlockedTitles: ['title_novice'],
   avatar: '👑',
+  backgroundUrl: '',
   warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
   missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
   lastOfflineTime: Date.now(),
@@ -229,6 +232,14 @@ const state = {
 const listeners = [];
 function subscribeState(fn) { listeners.push(fn); }
 function notifyStateChange() { listeners.forEach(fn => fn(state)); }
+
+function applyBackground(url) {
+  if (url && url.trim()) {
+    document.body.style.background = `#000 url(${url}) center/cover no-repeat`;
+  } else {
+    document.body.style.background = '';
+  }
+}
 
 function getCloudStateSnapshot() {
   if (typeof getCloudSyncState === 'function') return getCloudSyncState();
@@ -491,6 +502,8 @@ let myGeneratedRoomCode = null;
 let activeRoomCode = null;
 let currentRoomRole = null; // 'host' or 'guest' or null (AI)
 let roomWaitingPollInterval = null;
+let battleMatchedAt = null;
+let battleTickBusy = false;
 
 function generateRoomCode() {
   myGeneratedRoomCode = String(Math.floor(1000 + Math.random() * 9000));
@@ -505,38 +518,57 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
   enemyClicksInBattle = 0;
   battleTimeLeft = 10;
 
+  // Room battle: calculate initial time from shared matched_at timestamp
+  if (battleMatchedAt) {
+    const elapsed = Math.floor((Date.now() - battleMatchedAt) / 1000);
+    battleTimeLeft = Math.max(0, 10 - elapsed);
+  }
+
   document.getElementById('battleSetupPanel').hidden = true;
   document.getElementById('battleArenaPanel').hidden = false;
 
   document.getElementById('enemyNameLabel').textContent = enemyInfo.name;
   document.getElementById('enemyCastleLabel').textContent = enemyInfo.name;
   document.getElementById('enemyPowerLabel').textContent = enemyInfo.power.toLocaleString();
-  document.getElementById('battleTimerDisplay').textContent = '10s';
+  document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
   updateFrontlineVisual();
 
   if (battleInterval) clearInterval(battleInterval);
   battleInterval = setInterval(async () => {
-    battleTimeLeft--;
-    document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
+    if (battleMatchedAt) {
+      const elapsed = Math.floor((Date.now() - battleMatchedAt) / 1000);
+      battleTimeLeft = Math.max(0, 10 - elapsed);
+    } else {
+      battleTimeLeft--;
+    }
 
     if (battleTimeLeft <= 0) {
       endBattle();
       return;
     }
 
+    document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
+
     // Real-time synchronization for room battles via Supabase
     if (activeRoomCode && typeof supabaseFetchRoom === 'function' && typeof supabaseSubmitBattleTaps === 'function') {
-      // Sync my taps to Cloud
-      await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
-      // Fetch opponent's taps from Cloud
-      const r = await supabaseFetchRoom(activeRoomCode);
-      if (r) {
-        enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
+      if (battleTickBusy) return;
+      battleTickBusy = true;
+      try {
+        // Sync my taps to Cloud
+        await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+        // Fetch opponent's taps from Cloud
+        const r = await supabaseFetchRoom(activeRoomCode);
+        if (r) {
+          enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
+        }
+      } finally {
+        battleTickBusy = false;
       }
     } else {
-      // Simulated AI enemy taps
-      const simulatedTapRate = Math.floor(3 + Math.random() * 4);
+      // AI enemy taps: scales with player CPS
+      const cpsFactor = Math.min(state.cps || 0, 2000);
+      const simulatedTapRate = Math.floor(6 + cpsFactor * 0.02 + Math.random() * (4 + cpsFactor * 0.015));
       enemyClicksInBattle += simulatedTapRate;
     }
 
@@ -548,11 +580,6 @@ function registerMyBattleTap() {
   if (battleTimeLeft <= 0) return;
   myClicksInBattle += 1;
   updateFrontlineVisual();
-
-  // Instantly send tap count to room
-  if (activeRoomCode && typeof supabaseSubmitBattleTaps === 'function') {
-    supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
-  }
 }
 
 function updateFrontlineVisual() {
@@ -590,8 +617,10 @@ function endBattle() {
   checkTitleUnlocks();
   notifyStateChange();
 
+  battleTickBusy = false;
   activeRoomCode = null;
   currentRoomRole = null;
+  battleMatchedAt = null;
 
   setTimeout(() => {
     document.getElementById('battleSetupPanel').hidden = false;
@@ -886,6 +915,11 @@ function switchView(viewName) {
     return;
   }
 
+  // End battle if navigating away during a match
+  if (battleInterval) {
+    endBattle();
+  }
+
   // Stop shooter mini-game loop if navigating away
   if (viewName !== 'shooter' && typeof shooterActive !== 'undefined' && shooterActive) {
     shooterActive = false;
@@ -1071,6 +1105,59 @@ function renderProfileView() {
         renderProfileView();
       };
     });
+  }
+
+  // Background URL
+  const bgInput = document.getElementById('profileBgInput');
+  const bgPreview = document.getElementById('bgPreview');
+  const applyBgBtn = document.getElementById('applyBgBtn');
+  const removeBgBtn = document.getElementById('removeBgBtn');
+
+  if (bgInput && document.activeElement !== bgInput) {
+    bgInput.value = state.backgroundUrl || '';
+  }
+
+  if (bgPreview) {
+    if (state.backgroundUrl && state.backgroundUrl.trim()) {
+      bgPreview.style.backgroundImage = `url(${state.backgroundUrl})`;
+      bgPreview.classList.add('has-bg');
+    } else {
+      bgPreview.style.backgroundImage = '';
+      bgPreview.classList.remove('has-bg');
+    }
+  }
+
+  if (applyBgBtn) {
+    applyBgBtn.onclick = () => {
+      const url = bgInput ? bgInput.value.trim() : '';
+      state.backgroundUrl = url;
+      applyBackground(url);
+      if (bgPreview) {
+        if (url) {
+          bgPreview.style.backgroundImage = `url(${url})`;
+          bgPreview.classList.add('has-bg');
+        } else {
+          bgPreview.style.backgroundImage = '';
+          bgPreview.classList.remove('has-bg');
+        }
+      }
+      if (state.currentUser) scheduleSave();
+      showToast(url ? '🖼️ 배경 이미지가 적용되었습니다!' : '배경이 제거되었습니다.');
+    };
+  }
+
+  if (removeBgBtn) {
+    removeBgBtn.onclick = () => {
+      state.backgroundUrl = '';
+      if (bgInput) bgInput.value = '';
+      if (bgPreview) {
+        bgPreview.style.backgroundImage = '';
+        bgPreview.classList.remove('has-bg');
+      }
+      applyBackground('');
+      if (state.currentUser) scheduleSave();
+      showToast('배경이 제거되었습니다.');
+    };
   }
 
   // Render Stats Grid
@@ -1680,6 +1767,7 @@ function checkOfflineHarvest(lastTime) {
     state.lastOfflineTime = now;
 
     addClicks(reward);
+    if (state.currentUser) scheduleSave();
 
     const timeEl = document.getElementById('offlineTimeDisplay');
     const earnedEl = document.getElementById('offlineEarnedDisplay');
@@ -1718,6 +1806,7 @@ async function flushSave() {
     account.unlockedTitles = state.unlockedTitles;
     account.warRecords = state.warRecords;
     account.missionProgress = state.missionProgress;
+    account.backgroundUrl = state.backgroundUrl;
     account.lastOfflineTime = state.lastOfflineTime;
     account.battlePower = calcBattlePower();
     account.updatedAt = Date.now(); // 수정: 로컬 캐시에도 최신 저장 시각을 남겨 클라우드와 비교 가능하게 한다.
@@ -1906,10 +1995,13 @@ async function handleLogin() {
   state.unlockedTitles = account.unlockedTitles || ['title_novice'];
   state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
   state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
-  
+  state.backgroundUrl = account.backgroundUrl || '';
+  state.lastOfflineTime = account.lastOfflineTime || Date.now();
+
   recalculateCPS();
   recalculateMultipliers();
 
+  applyBackground(state.backgroundUrl);
   checkOfflineHarvest(account.lastOfflineTime);
 
   await setSession(account.user_id);
@@ -2010,6 +2102,9 @@ function setupEventListeners() {
       if (state.currentView === 'clicker') {
         e.preventDefault();
         handleSealClick(null);
+      } else if (state.currentView === 'battle' && battleTimeLeft > 0) {
+        e.preventDefault();
+        registerMyBattleTap();
       }
     }
   });
@@ -2122,6 +2217,7 @@ function setupEventListeners() {
             if (r && r.status === 'matched') {
               clearInterval(roomWaitingPollInterval);
               roomWaitingPollInterval = null;
+              battleMatchedAt = r.matchedAt || Date.now();
               showToast(`⚔️ [${r.guestNickname || '친구'}]님 입장 완료! 대전을 시작합니다!`);
               startBattle({
                 name: `👑 ${r.guestNickname || '친구 영주'}의 군대`,
@@ -2171,10 +2267,11 @@ function setupEventListeners() {
 
           // Mark room as joined in Supabase
           if (typeof supabaseJoinRoom === 'function') {
-            await supabaseJoinRoom(inputCode, {
+            const matchedAtStr = await supabaseJoinRoom(inputCode, {
               id: state.currentUser.id,
               nickname: state.currentUser.nickname
             });
+            battleMatchedAt = matchedAtStr ? new Date(matchedAtStr).getTime() : Date.now();
           }
 
           const enemyInfo = {
@@ -2261,7 +2358,9 @@ function setupEventListeners() {
         if (state.currentUser) scheduleSave();
       }
     } else if (document.visibilityState === 'hidden' && state.currentUser) {
-      state.lastOfflineTime = Date.now();
+      if (!activeRoomCode) {
+        state.lastOfflineTime = Date.now();
+      }
       saveEmergencySnapshot();
       flushSave();
     }
@@ -2332,9 +2431,12 @@ async function init() {
       state.unlockedTitles = account.unlockedTitles || ['title_novice'];
       state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
       state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
+      state.backgroundUrl = account.backgroundUrl || '';
+      state.lastOfflineTime = account.lastOfflineTime || Date.now();
       recalculateCPS();
       recalculateMultipliers();
 
+      applyBackground(state.backgroundUrl);
       // Process Offline Background CPS Harvest → show modal popup
       checkOfflineHarvest(account.lastOfflineTime);
     } else {

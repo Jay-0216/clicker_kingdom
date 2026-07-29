@@ -327,6 +327,7 @@ async function supabaseSaveAccount(account) {
         unlocked_titles: account.unlockedTitles || ['title_novice'],
         war_records: account.warRecords || {},
         mission_progress: account.missionProgress || {},
+        background_url: account.backgroundUrl || '',
         battle_power: account.battlePower || 0,
         wins: (account.warRecords && account.warRecords.wins) || 0,
         last_offline_time: account.lastOfflineTime || Date.now(),
@@ -425,6 +426,7 @@ async function supabaseLoadAccount() {
       warRecords: data.war_records || {},
       missionProgress: data.mission_progress || {},
       battlePower: data.battle_power || 0,
+      backgroundUrl: data.background_url || '',
       wins: data.wins || 0,
       lastOfflineTime: data.last_offline_time || Date.now(),
       updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now()
@@ -514,6 +516,7 @@ async function supabaseFetchAccount(userId) {
       warRecords: data.war_records || {},
       missionProgress: data.mission_progress || {},
       battlePower: data.battle_power || 0,
+      backgroundUrl: data.background_url || '',
       wins: data.wins || 0,
       lastOfflineTime: data.last_offline_time || Date.now(),
       updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now()
@@ -583,12 +586,14 @@ async function supabaseJoinRoom(code, guestData) {
   if (!client) return false;
 
   try {
+    const matchedAt = new Date().toISOString();
     const { error } = await client
       .from('rooms')
       .update({
         guest_id: guestData.id,
         guest_nickname: guestData.nickname,
-        status: 'matched'
+        status: 'matched',
+        matched_at: matchedAt
       })
       .eq('code', String(code));
 
@@ -596,7 +601,7 @@ async function supabaseJoinRoom(code, guestData) {
       console.warn('supabaseJoinRoom error:', error);
       return false;
     }
-    return true;
+    return matchedAt;
   } catch (err) {
     console.warn('supabaseJoinRoom exception:', err);
     return false;
@@ -635,7 +640,8 @@ async function supabaseFetchRoom(code) {
       guestId: data.guest_id,
       guestNickname: data.guest_nickname,
       hostTaps: data.host_taps || 0,
-      guestTaps: data.guest_taps || 0
+      guestTaps: data.guest_taps || 0,
+      matchedAt: data.matched_at ? new Date(data.matched_at).getTime() : null
     };
   } catch (err) {
     console.warn('supabaseFetchRoom exception:', err);
