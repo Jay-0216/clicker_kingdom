@@ -12,8 +12,22 @@ const cloudSyncState = {
   detail: '아직 Supabase 연결 상태를 확인하지 않았어요.',
   lastSyncAt: 0,
   lastErrorAt: 0,
+  lastErrorRetryable: true,
   diagnostics: null
 };
+
+function isRetryableError(error) {
+  if (!error) return false;
+  const code = error.code ? String(error.code) : '';
+  const status = error.status || 0;
+  const msg = (error.message || '').toLowerCase();
+  // 4xx: permanent (bad request, auth, not found, RLS)
+  if (/^(4(?!29)\d{2})$/.test(code) || (status >= 400 && status < 500 && status !== 429)) return false;
+  if (code === '42501') return false; // RLS policy
+  if (msg.includes('rls') || msg.includes('policy')) return false;
+  if (msg.includes('schema') || msg.includes('relation') || msg.includes('does not exist')) return false;
+  return true; // network errors, 5xx, 429 rate limit → retryable
+}
 
 function emitCloudSyncState() {
   window.dispatchEvent(new CustomEvent('ck-cloud-status', {
@@ -80,6 +94,16 @@ async function runReadDiagnostic(client, table, column) {
 
 function getSupabaseClient() {
   if (supabaseClient) return supabaseClient;
+
+  if (window.location.protocol === 'file:') {
+    updateCloudSyncState({
+      tone: 'error',
+      summary: '파일 프로토콜에서는 클라우드를 사용할 수 없어요.',
+      detail: '파일을 직접 열면 보안 정책(CORS) 때문에 Supabase 연결이 차단돼요. 로컬 서버(http://localhost)를 사용해 주세요.',
+      lastErrorAt: Date.now()
+    });
+    return null;
+  }
 
   // Try retrieving custom user credentials from localStorage if configured
   const customUrl = localStorage.getItem('ck_supabase_url') || SUPABASE_URL;
@@ -182,11 +206,13 @@ async function supabaseSyncAccount(account) {
     if (error) {
       console.warn("Supabase account sync error:", error);
       const formatted = formatCloudError('accounts', error);
+      const retryable = isRetryableError(error);
       updateCloudSyncState({
         tone: formatted.tone,
         summary: formatted.summary,
         detail: formatted.detail,
-        lastErrorAt: Date.now()
+        lastErrorAt: Date.now(),
+        lastErrorRetryable: retryable
       });
       return false;
     }
@@ -206,12 +232,14 @@ async function supabaseSyncAccount(account) {
     if (leaderboardError) {
       console.warn("Supabase leaderboard sync error:", leaderboardError);
       const formatted = formatCloudError('leaderboard', leaderboardError);
+      const retryable = isRetryableError(leaderboardError);
       updateCloudSyncState({
         tone: formatted.tone,
         summary: formatted.summary,
         detail: formatted.detail,
         lastErrorAt: Date.now(),
-        lastSyncAt: Date.now()
+        lastSyncAt: Date.now(),
+        lastErrorRetryable: retryable
       });
       return false;
     }
@@ -231,7 +259,8 @@ async function supabaseSyncAccount(account) {
       tone: formatted.tone,
       summary: formatted.summary,
       detail: formatted.detail,
-      lastErrorAt: Date.now()
+      lastErrorAt: Date.now(),
+      lastErrorRetryable: true
     });
     return false;
   }

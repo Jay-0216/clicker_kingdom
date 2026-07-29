@@ -401,8 +401,14 @@
         <h4 style="color: var(--gold-bright); margin: 24px 0 10px;">📊 통치 기록 요약</h4>
         <div id="profileStatsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; text-align: center;"></div>
 
+        <!-- Cloud Save Button -->
+        <div style="text-align: center; margin-top: 20px;">
+          <button class="buy-btn" id="profileCloudSaveBtn" style="background: rgba(40,80,180,0.25); border-color: rgba(60,100,200,0.5); color: #80b0ff;">☁️ 클라우드에 캐시 저장</button>
+          <p style="font-size: 11px; color: var(--parchment-dim); margin-top: 6px;">현재 데이터를 Supabase 클라우드에 즉시 저장합니다.</p>
+        </div>
+
         <!-- Logout Button -->
-        <div style="text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid rgba(212,175,55,0.2);">
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(212,175,55,0.2);">
           <button class="buy-btn" id="profileLogoutBtn" style="background: rgba(180,40,40,0.25); border-color: rgba(200,60,60,0.5); color: #ff8080;">🚪 로그아웃</button>
         </div>
       </div>

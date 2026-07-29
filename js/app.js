@@ -286,9 +286,9 @@ function spendClicks(amount) {
 // ---------- 4. Upgrades & Relics & Effects & Offline CPS ----------
 function getArmyCost(item, count) {
   const clicks = getClicks();
-  const idx = ARMY_ITEMS.findIndex(a => a.id === item.id);
-  const fraction = idx >= 0 ? 0.02 + (idx / (ARMY_ITEMS.length - 1)) * 0.48 : 0.5;
-  return Math.max(1, Math.floor(clicks * fraction));
+  const base = Math.floor(clicks * 0.2);
+  const growth = Math.pow(3, count);
+  return Math.max(1, Math.floor(base * growth));
 }
 
 function buyArmy(itemId) {
@@ -801,7 +801,7 @@ function handleAdminLogin() {
 }
 
 function renderAdminView() {
-  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin'));
+  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin' || state.currentUser.id === 'lucaluca' || state.currentUser.nickname === 'lucaluca'));
   const loginForm = document.getElementById('adminLoginForm');
   const dashboard = document.getElementById('adminDashboardContent');
 
@@ -1049,8 +1049,9 @@ async function handleAdminUserSave() {
       clearPendingSync();
       showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB + Supabase에 저장되었습니다.`);
     } else {
-      savePendingSync(acc);
-      showToast(`💾 ${acc.nickname}님의 데이터를 로컬에 저장했지만 클라우드 동기화에 실패했습니다. 자동 재시도 중...`);
+      const retryable = (typeof getCloudSyncState === 'function') ? getCloudSyncState().lastErrorRetryable : true;
+      savePendingSync(acc, retryable);
+      showToast(`💾 ${acc.nickname}님의 데이터를 로컬에 저장했지만 클라우드 동기화에 실패했습니다.${retryable ? ' 자동 재시도 중...' : ' (영구 오류, 재시도하지 않음)'}`);
     }
   } else {
     showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB에 저장되었습니다.`);
@@ -1162,7 +1163,7 @@ function renderActiveView() {
   const clicks = getClicks();
   const tier = getTierInfo(clicks);
 
-  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin'));
+  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin' || state.currentUser.id === 'lucaluca' || state.currentUser.nickname === 'lucaluca'));
   const adminNavBtn = document.getElementById('adminNavBtn');
   if (adminNavBtn) {
     adminNavBtn.hidden = !isAdminUser;
@@ -1342,6 +1343,23 @@ function renderProfileView() {
         <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);">${wins}승 ${losses}패</div>
       </div>
     `;
+  }
+
+  // Cloud save button
+  const cloudSaveBtn = document.getElementById('profileCloudSaveBtn');
+  if (cloudSaveBtn) {
+    cloudSaveBtn.onclick = async () => {
+      if (!state.currentUser) return;
+      cloudSaveBtn.textContent = '☁️ 저장 중...';
+      cloudSaveBtn.disabled = true;
+      const prev = saveQueued;
+      saveQueued = true;
+      await flushSave();
+      saveQueued = prev;
+      cloudSaveBtn.textContent = '☁️ 클라우드에 캐시 저장';
+      cloudSaveBtn.disabled = false;
+      showToast('☁️ 데이터가 클라우드에 저장되었습니다.');
+    };
   }
 
   // Logout button inside profile page
@@ -1793,9 +1811,14 @@ let saveTimeout = null;
 
 const PENDING_SYNC_KEY = 'ck_pending_sync';
 
-function savePendingSync(account) {
+function isFileProtocol() {
+  return window.location.protocol === 'file:';
+}
+
+function savePendingSync(account, retryable = true) {
+  if (isFileProtocol()) return;
   try {
-    localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify({ account, savedAt: Date.now() }));
+    localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify({ account, savedAt: Date.now(), retryable }));
   } catch (e) { /* localStorage full */ }
 }
 
@@ -1813,11 +1836,22 @@ function getPendingSync() {
 async function retryPendingSync() {
   const pending = getPendingSync();
   if (!pending || !pending.account) return;
+  if (pending.retryable === false) {
+    clearPendingSync();
+    return;
+  }
   if (typeof supabaseSyncAccount !== 'function') return;
   const ok = await supabaseSyncAccount(pending.account);
   if (ok) {
     clearPendingSync();
-    console.log('Pending cloud sync completed');
+  } else {
+    // Check if retry is still viable
+    if (typeof getCloudSyncState === 'function') {
+      const st = getCloudSyncState();
+      if (st && st.lastErrorRetryable === false) {
+        clearPendingSync();
+      }
+    }
   }
 }
 
@@ -1892,7 +1926,8 @@ async function flushSave() {
       if (ok) {
         clearPendingSync();
       } else {
-        savePendingSync(account);
+        const retryable = (typeof getCloudSyncState === 'function') ? getCloudSyncState().lastErrorRetryable : true;
+        savePendingSync(account, retryable);
       }
     }
   }
