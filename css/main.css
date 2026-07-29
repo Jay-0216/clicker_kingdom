@@ -300,9 +300,11 @@ textarea:focus-visible {
 }
 
 #landingView {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   gap: 18px;
 }
