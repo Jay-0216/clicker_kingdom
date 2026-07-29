@@ -396,6 +396,8 @@ function recalculateCPS() {
   });
   state.offlineCps = totalOfflineCps;
 
+  if (state.currentView === 'clicker') startEmojiRain(state.cps);
+
   notifyStateChange();
 }
 
@@ -1146,6 +1148,13 @@ function switchView(viewName) {
     }
   }
 
+  // Start/stop emoji rain based on CPS when entering clicker view
+  if (viewName === 'clicker') {
+    startEmojiRain(state.cps || 0);
+  } else {
+    stopEmojiRain();
+  }
+
   state.currentView = viewName;
   const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
   views.forEach(vId => {
@@ -1395,6 +1404,48 @@ function renderProfileView() {
 
 let glitchTimer = null;
 let glitchStateToggle = false;
+let emojiRainTimer = null;
+
+const RAIN_EMOJIS = ['🪙', '💰', '✨', '💎', '👑', '⚔️', '🛡️', '🐲', '⭐', '🌟'];
+
+function spawnEmojiRain(cps) {
+  const container = document.getElementById('emojiRain');
+  if (!container) return;
+  if (cps <= 0) return;
+  const emoji = RAIN_EMOJIS[Math.floor(Math.random() * RAIN_EMOJIS.length)];
+  const el = document.createElement('span');
+  el.className = 'emoji-drop';
+  el.textContent = emoji;
+  el.style.left = (5 + Math.random() * 90) + '%';
+  el.style.fontSize = (14 + Math.random() * 16) + 'px';
+  const fallDuration = 2 + Math.random() * 3;
+  el.style.setProperty('--fall-distance', (300 + Math.random() * 300) + 'px');
+  el.style.setProperty('--drift', (Math.random() * 60 - 30) + 'px');
+  el.style.setProperty('--spin', (Math.random() * 720 - 360) + 'deg');
+  el.style.animationDuration = fallDuration + 's';
+  container.appendChild(el);
+  setTimeout(() => el.remove(), fallDuration * 1000);
+}
+
+function startEmojiRain(cps) {
+  stopEmojiRain();
+  if (cps <= 0) return;
+  const interval = Math.max(100, 3000 / (1 + cps * 0.3));
+  emojiRainTimer = setInterval(() => spawnEmojiRain(cps), interval);
+  // Spawn a few immediately
+  for (let i = 0; i < Math.min(5, Math.ceil(cps / 10)); i++) {
+    setTimeout(() => spawnEmojiRain(cps), i * 200);
+  }
+}
+
+function stopEmojiRain() {
+  if (emojiRainTimer) {
+    clearInterval(emojiRainTimer);
+    emojiRainTimer = null;
+  }
+  const container = document.getElementById('emojiRain');
+  if (container) container.innerHTML = '';
+}
 
 function renderClickerView(clicks, tier) {
   const clickCountEl = document.getElementById('clickCount');

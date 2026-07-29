@@ -402,6 +402,7 @@ textarea:focus-visible {
 
 /* Clicker View */
 #clickerView {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -599,6 +600,28 @@ textarea:focus-visible {
   color: var(--gold-bright);
 }
 .ghost-btn:hover { background: rgba(212,175,55,0.12); }
+
+/* Emoji Rain Effect */
+#emojiRain {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.emoji-drop {
+  position: absolute;
+  top: -30px;
+  pointer-events: none;
+  font-size: 20px;
+  animation: emojiFall linear forwards;
+  opacity: 0.6;
+}
+@keyframes emojiFall {
+  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.6; }
+  80% { opacity: 0.3; }
+  100% { transform: translateY(var(--fall-distance, 600px)) translateX(var(--drift, 30px)) rotate(var(--spin, 360deg)); opacity: 0; }
+}
 
 /* Floating Particles */
 .particle {
