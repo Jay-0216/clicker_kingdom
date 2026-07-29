@@ -15,6 +15,7 @@ clicker kingdom/
 │   ├── main.css          # 고유 디자인 시스템, 테마 변수, 버튼제국 스타일, 오라 애니메이션, 히어로 랜딩, 기본 레이아웃, 계정 드롭다운
 │   └── components.css    # 상점 카드, 이펙트 카드, 클릭커 밑 빠른 업그레이드 패널, 10초 실시간 전선 게이지, 알약 스타일 모달 탭, 랭킹/칭호 뱃지, 미션, 제보/Admin 모달
 └── js/
+    ├── game-config.js    # 제국 단계, 아이템, formatNumber 등 게임 수치 설정
     ├── app.js            # 전체 통합 스크립트 (모든 브라우저 file:// 및 http:// 호환 실행)
     └── supabase-sync.js  # Supabase 클라우드 동기화 (선택적, 미설정 시 로컬 IndexedDB만 사용)
 ```
@@ -36,15 +37,62 @@ clicker kingdom/
 | **인증 알약 탭 모달** | Section 11 & HTML | `setModalTab()` | 상단 바 스타일 둥근 알약 탭, **로그인 ("다시 오신 것을 환영합니다. 황제시여")**, **회원가입 ("저희의 황제가 되어 제국을 건설하십시오")** 서브 문구 반영 |
 | **군대/상점/백그라운드** | Section 4 | `buyArmy()`, `buyOfflineArmy()`, `buyRelic()` | Spacebar Clicker 9종 군대, 5종 보구, 백그라운드 CPS 상점 구매 |
 | **전투력/칭호** | Section 5 | `calcBattlePower()`, `equipTitle()` | 전투력 공식 산출, 로그인 검증, 칭호 해금 및 메인 씰(Seal) Visual 변형 |
-| **친구 대전 & 전장** | Section 6 | `generateRoomCode()`, `startBattle()` | 4자리 룸코드 친구 대전, 본인 코드 입력 방지 및 진짜 군대(🏰⚔️🚩) 전장 Visual 연출 |
+| **친구 대전 & 전장** | Section 6 | `generateRoomCode()`, `startBattle()`, `supabaseSubmitBattleTaps()` | 4자리 룸코드 실시간 대전, 방장/참가자 양방향 자동 매칭 및 클릭 연타수 실시간 동기화 |
+| **🚀 포탄 슈팅 미니게임**| Section 10 | `initShooterGame()`, `shooterLoop()` | 방향키/마우스 조종 포대 원거리 자동 포탄 연사, 적 퇴치 및 전리품 자금 수확 Canvas 미니게임 |
 | **미션 시스템** | Section 7 | `claimMissionReward()` | vibers 스타일 일일 미션 & 업적 클리어 검증 |
-| **명예의 전당** | Section 8 | `renderRankingView()` | logis.xyz 스타일 3가지 다각도 리더보드 순위표 (수동 새로고침) |
+| **명예의 전당** | Section 8 | `renderRankingView()` | 칭호 미장착 시 '칭호 없음' 및 제국 등급 단계 함께 표기 |
 | **버그/아이디어**| Section 9 | `submitFeedback()` | vibers 참고 버그 제보/아이디어 작성 & 포상금 지급 |
-| **관리자 모드** | Section 10 | `handleAdminLogin()`, `handleAdminCustomClickSet()` | 관리자 모드 수동 클릭 수 직접 숫자 입력 설정 및 제보 관리 |
+| **관리자 모드** | Section 10 | `handleAdminLogin()`, `renderAdminView()` | 상단 네비 버튼 제거, 프로필 페이지 내 jay0216 로그인 검증으로만 접근 가능 |
 
 ---
 
 ## 3. 변경 이력 (Changelog)
+
+### [v2.9.0] - 2026-07-29
+- **게임 설정 파일 분리 (`js/game-config.js`)**:
+  - `KINGDOM_TIERS`, `ARMY_ITEMS`, `MULTIPLIER_RELICS`, `VISUAL_EFFECTS`, `OFFLINE_CPS_ITEMS`, `UNLOCKABLE_TITLES`, `DAILY_MISSIONS`, `ADMIN_PASSWORD`를 `app.js`에서 분리.
+  - `index.html`에서 `app.js`보다 먼저 로드.
+- **숫자 단축 표기 (`formatNumber`)**:
+  - K / M / B / T / aa / ht(핵타) / ac… / ∞ 체계 적용.
+  - 클릭 카운터, CPS 라벨, 상점 가격, 랭킹, 프로필, 퀵 업그레이드, 오프라인 수확 UI에 적용. 전체 숫자는 `title` 툴팁으로 병기.
+- **제국 단계 난이도 재설계**:
+  - 9단계 지수 곡선 (초라한 오두막 → 무한의 영역 1e19 ≈ 10해).
+  - `MAX_TIER_CLICKS = 1e19` 초과 시 Glitch ∞ 효과 및 `[신]` 칭호 해금.
+  - 후반 콘텐츠 유닛 3종 추가 (천상 정예 군단, 허공 소멸포, 무한 에너지 기관).
+- **클릭 수 동기화 버그 수정**:
+  - **원인**: `beforeunload`에서 async `flushSave()`가 완료되기 전 페이지 종료, `updatedAt` 비교 허점, CPS 루프 매초 `scheduleSave()`로 저장 경쟁.
+  - **수정**:
+    - `saveEmergencySnapshot()` — 페이지 종료/탭 숨김 시 localStorage 동기 백업.
+    - `applyEmergencySnapshot()` — 다음 로그인/세션 복구 시 스냅샷 병합.
+    - `loadPreferredAccount()` — 클라우드 우선(동률 시), 양쪽 `clicks` 최댓값 병합 후 클라우드 재동기화.
+    - CPS 자동 저장 주기 1초 → 5초, 탭 숨김 시 즉시 `flushSave()`.
+    - `flushSave()`에 `updatedAt` 기록 및 Supabase `await` 유지.
+
+### [v2.8.0] - 2026-07-28
+- **화면 분할 버그 수정**: `switchView()` 이동 시 `shooterView` 포함 모든 뷰를 완벽히 숨기고, 포탄 슈팅 게임 애니메이션 루프(`shooterAnimFrame`, `shooterActive`)를 즉시 정지하도록 정돈하여 뷰 이동 시 게임 화면과 타 뷰가 겹쳐서 분할 표시되던 현상을 해결했습니다.
+- **모바일 알약(Pill) 바 최적화**: 
+  - 모바일 해상도(≤640px)에서 알약 모양 둥근 내비게이션 바(`topbar-wrap`, `topbar-nav`)가 잘리거나 깨지지 않도록 좌우 터치 스크롤 패딩 및 폰트 픽셀/자간 최적화.
+  - 상단 모바일 터치 시 수평 스크롤(`-webkit-overflow-scrolling: touch`)이 부드럽게 넘어가며 유저 칩/버튼 크기 가독성 개선.
+- **초월 글자 표기 정돈**: 지직 효과(Glitch) 무한 표기 시 `(무한)` 텍스트를 제거하고 깔끔한 `∞` 기호와 숫자가 지직거리며 반전되도록 가독성 향상.
+
+### [v2.7.0] - 2026-07-28
+- **천상 제국 초월 & Glitch 무한(∞) 효과**: 
+  - 천상 제국 초월 기준(5,000,000 클릭) 도달 시 클릭 수 표기가 숫자와 **`∞`** 표시 사이를 지직(Glitch)거리며 교차 변환하도록 구현.
+  - 클릭 수 및 메인 인장 버튼(클릭커)에 시각적 일그러짐과 색상 변환(hue-rotate) 지직 애니메이션 적용.
+  - 초월 도달 시 **[신]** 칭호 해금.
+- **[신] 히든 칭호 보안**:
+  - 비밀 칭호인 `[신]`은 실제로 조건(천상 제국 초월)을 달성하여 해금하기 전까지는 칭호 도감 목록에서 표시되지 않도록 미해금 숨김 처리.
+- **랭킹 목록 개선**:
+  - 칭호를 장착하지 않은 유저는 랭킹에서 숨기지 않고 **'칭호 없음'** 칩으로 표시되도록 수정.
+  - 랭킹 유저 닉네임 옆에 해당 유저의 **제국 단계 (예: 석조 요새, 천상 제국, ??? 등)** 추가 표기.
+- **실시간 룸 대전 & 자동 매칭 동기화**:
+  - Supabase `rooms` 테이블 연동을 확장하여 룸 생성 후 대기(Waiting) 상태에서 상대방 입장 시 양쪽 브라우저 모두 **자동 대전 시작**.
+  - 대전 진행 중 10초간 양 유저의 실시간 클릭 연타수가 클라우드에 전송되어 상대 전선 게이지가 양방향으로 동기화되도록 개선.
+- **신규 🚀 포탄 슈팅 미니게임 추가**:
+  - 상단 메뉴에 `🚀 포탄 슈팅` 탭 추가.
+  - 마우스/터치/방향키 조종 원거리 포대 Canvas 미니게임 추가 (자동 포탄 연사, 침략군 적 맞추기, 점수 및 전리품 자금 수확).
+- **관리자 메뉴 접근 일관화**:
+  - 네비게이션 상단바의 관리자 버튼(`adminNavBtn`)을 삭제하고, 프로필 페이지 하단에서 `jay0216` 계정 확인 시에만 비밀번호 입력 없이 접근 가능하도록 정돈.
 
 ### [v2.6.0] - 2026-07-28
 - **계정 드롭다운 UI 추가**: 상단바 계정 닉네임을 클릭 가능하게 변경, 클릭 시 작은 드롭다운에서 아이디 표시. 바깥 클릭 시 자동 닫힘.

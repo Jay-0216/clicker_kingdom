@@ -18,26 +18,27 @@
   <!-- Topbar Navigation -->
   <div class="topbar-wrap">
     <header class="topbar">
-      <div class="logo" id="logoHeader">
-        <svg class="logo-crest" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2 L20 5 V11 C20 16 16.5 19.5 12 21 C7.5 19.5 4 16 4 11 V5 Z" fill="none" stroke="#D4AF37" stroke-width="1.4"/>
-          <path d="M12 6.5 L14.5 9 L12 11.5 L9.5 9 Z" fill="#D4AF37"/>
-        </svg>
-        <span class="logo-text">CLICKER KINGDOM</span>
+      <div class="topbar-top-row">
+        <div class="logo" id="logoHeader">
+          <svg class="logo-crest" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2 L20 5 V11 C20 16 16.5 19.5 12 21 C7.5 19.5 4 16 4 11 V5 Z" fill="none" stroke="#D4AF37" stroke-width="1.4"/>
+            <path d="M12 6.5 L14.5 9 L12 11.5 L9.5 9 Z" fill="#D4AF37"/>
+          </svg>
+          <span class="logo-text">CLICKER KINGDOM</span>
+        </div>
+        <div class="topbar-actions" id="topbarActions"></div>
       </div>
 
       <nav class="topbar-nav">
         <button class="nav-tab-btn" data-nav-view="clicker" data-view="clicker"><span class="topbar-icon">🏰</span> 클릭</button>
         <button class="nav-tab-btn" data-nav-view="shop" data-view="shop"><span class="topbar-icon">⚔️</span> 군대 상점</button>
         <button class="nav-tab-btn" data-nav-view="battle" data-view="battle"><span class="topbar-icon">🛡️</span> 대전</button>
+        <button class="nav-tab-btn" data-nav-view="shooter" data-view="shooter"><span class="topbar-icon">🚀</span> 포탄 슈팅</button>
         <button class="nav-tab-btn" data-nav-view="ranking" data-view="ranking"><span class="topbar-icon">🏆</span> 랭킹</button>
         <button class="nav-tab-btn" data-nav-view="titles" data-view="titles"><span class="topbar-icon">👑</span> 칭호</button>
         <button class="nav-tab-btn" data-nav-view="missions" data-view="missions"><span class="topbar-icon">📜</span> 미션</button>
         <button class="nav-tab-btn" id="feedbackNavBtn"><span class="topbar-icon">💡</span> 제보</button>
-        <button class="nav-tab-btn" data-nav-view="admin" id="adminNavBtn" hidden><span class="topbar-icon">⚙️</span> 관리자</button>
       </nav>
-
-      <div class="topbar-actions" id="topbarActions"></div>
     </header>
   </div>
 
@@ -61,7 +62,7 @@
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-icon">🗡️</div>
-          <h3 class="feature-title">9종의 정예 군대 & 백그라운드 CPS</h3>
+          <h3 class="feature-title">12종의 정예 군대 & 백그라운드 CPS</h3>
           <p class="feature-desc">농민 창병대부터 백그라운드 군단까지, 웹을 닫아도 자동으로 자금을 수확하세요.</p>
         </div>
         <div class="feature-card">
@@ -198,6 +199,34 @@
         </div>
 
         <button class="battle-tap-btn" id="battleTapBtn">🔥 폭풍 연타로 전선 밀어내기!</button>
+      </div>
+    </section>
+
+    <!-- 4.5. Space Cannon Shooter Mini-Game View -->
+    <section id="shooterView" class="view" hidden>
+      <div class="section-header">
+        <h2 class="section-title">🚀 군대 포탄 디펜스 슈팅</h2>
+      </div>
+
+      <div class="shop-card" style="text-align: center;">
+        <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 10px;">
+          내 군대의 원거리 포대에서 계속 포탄이 발사됩니다! 방향키/마우스/터치로 적 침략군을 맞추어 격파하고 전리품 자금을 획득하세요!
+        </p>
+
+        <div style="display: flex; justify-content: space-around; font-size: 14px; font-weight: 700; color: var(--gold-bright); margin-bottom: 10px;">
+          <span>점수: <span id="shooterScore">0</span></span>
+          <span>획득 자금: +<span id="shooterReward">0</span></span>
+          <span>남은 체력: <span id="shooterHp">❤️❤️❤️</span></span>
+        </div>
+
+        <div style="position: relative; width: 100%; max-width: 600px; margin: 0 auto; height: 400px; background: #0b0c1b; border: 2px solid var(--gold); border-radius: 12px; overflow: hidden;" id="shooterCanvasContainer">
+          <canvas id="shooterCanvas" width="600" height="400" style="width:100%; height:100%; display:block; cursor: crosshair;"></canvas>
+          <div id="shooterOverlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+            <h3 style="margin:0; font-size:22px; color:var(--gold-bright);">⚔️ 제국 군대 포탄 슈터</h3>
+            <p style="margin:0; font-size:13px; color:var(--parchment-dim);">마우스 이동 / 좌우 화살표로 포대 조종<br>자동으로 강력한 포탄이 연사됩니다!</p>
+            <button class="hero-primary-btn" id="startShooterBtn">🚀 게임 시작</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -480,6 +509,8 @@
 </div>
 
 
+<!-- game-config.js: 제국 단계, 아이템, 수치 등 모든 게임 설정 관리 파일 (app.js 이전에 반드시 로드) -->
+<script src="js/game-config.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

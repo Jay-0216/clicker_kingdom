@@ -338,6 +338,11 @@ async function supabaseCreateRoom(code, hostData) {
         host_nickname: hostData.nickname,
         host_power: hostData.power || 0,
         host_cps: hostData.cps || 0,
+        status: 'waiting',
+        guest_id: null,
+        guest_nickname: null,
+        host_taps: 0,
+        guest_taps: 0,
         created_at: new Date().toISOString()
       }, { onConflict: 'code' });
 
@@ -372,7 +377,33 @@ async function supabaseCreateRoom(code, hostData) {
   }
 }
 
-// Fetch a Room from Supabase by room code
+// Join room as guest
+async function supabaseJoinRoom(code, guestData) {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from('rooms')
+      .update({
+        guest_id: guestData.id,
+        guest_nickname: guestData.nickname,
+        status: 'matched'
+      })
+      .eq('code', String(code));
+
+    if (error) {
+      console.warn('supabaseJoinRoom error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('supabaseJoinRoom exception:', err);
+    return false;
+  }
+}
+
+// Fetch / Poll room state
 async function supabaseFetchRoom(code) {
   const client = getSupabaseClient();
   if (!client) return null;
@@ -385,19 +416,9 @@ async function supabaseFetchRoom(code) {
       .single();
 
     if (error || !data) {
-      if (error && error.code !== 'PGRST116') {
-        const formatted = formatCloudError('rooms', error);
-        updateCloudSyncState({
-          tone: formatted.tone,
-          summary: formatted.summary,
-          detail: formatted.detail,
-          lastErrorAt: Date.now()
-        });
-      }
       return null;
     }
 
-    // Expire rooms older than 1 hour
     const age = Date.now() - new Date(data.created_at).getTime();
     if (age > 3600000) {
       await client.from('rooms').delete().eq('code', String(code));
@@ -409,17 +430,29 @@ async function supabaseFetchRoom(code) {
       hostId: data.host_id,
       hostNickname: data.host_nickname,
       hostPower: data.host_power || 0,
-      hostCps: data.host_cps || 0
+      hostCps: data.host_cps || 0,
+      status: data.status || 'waiting',
+      guestId: data.guest_id,
+      guestNickname: data.guest_nickname,
+      hostTaps: data.host_taps || 0,
+      guestTaps: data.guest_taps || 0
     };
   } catch (err) {
     console.warn('supabaseFetchRoom exception:', err);
-    const formatted = formatCloudError('rooms', err);
-    updateCloudSyncState({
-      tone: formatted.tone,
-      summary: formatted.summary,
-      detail: formatted.detail,
-      lastErrorAt: Date.now()
-    });
     return null;
+  }
+}
+
+// Update battle tap count in real time
+async function supabaseSubmitBattleTaps(code, role, tapCount) {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const payload = role === 'host' ? { host_taps: tapCount } : { guest_taps: tapCount };
+    await client.from('rooms').update(payload).eq('code', String(code));
+    return true;
+  } catch (err) {
+    return false;
   }
 }
