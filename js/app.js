@@ -178,8 +178,10 @@ function applyEmergencySnapshot(account) {
     if (!snap || snap.id !== account.id) return false;
 
     let applied = false;
-    if ((snap.clicks || 0) > (account.clicks || 0)) {
-      account.clicks = snap.clicks;
+    const snapClicks = typeof snap.clicks === 'string' ? snap.clicks : String(snap.clicks || 0);
+    const accClicks = typeof account.clicks === 'string' ? account.clicks : String(account.clicks || 0);
+    if (bigGt(snapClicks, accClicks)) {
+      account.clicks = snapClicks;
       account.armies = snap.armies || account.armies;
       account.relics = snap.relics || account.relics;
       account.effects = snap.effects || account.effects;
@@ -203,7 +205,7 @@ function applyEmergencySnapshot(account) {
 // ---------- 3. Reactive Central Game State ----------
 const state = {
   currentUser: null,
-  localClicks: 0,
+  localClicks: "0",
   clickMultiplier: 1,
   cps: 0,
   offlineCps: 0,
@@ -248,11 +250,12 @@ function buildDiagnosticLine(label, result) {
 }
 
 function getClicks() {
-  return state.currentUser ? state.currentUser.clicks : state.localClicks;
+  const val = state.currentUser ? state.currentUser.clicks : state.localClicks;
+  return typeof val === 'string' ? val : String(Math.floor(val || 0));
 }
 
 function setClicksDirectly(amount) {
-  const val = Math.max(0, Math.floor(amount));
+  const val = typeof amount === 'string' ? amount : String(Math.max(0, Math.floor(amount)));
   if (state.currentUser) {
     state.currentUser.clicks = val;
   } else {
@@ -262,10 +265,11 @@ function setClicksDirectly(amount) {
 }
 
 function addClicks(amount) {
+  const added = bigAdd(getClicks(), Math.floor(amount));
   if (state.currentUser) {
-    state.currentUser.clicks += amount;
+    state.currentUser.clicks = added;
   } else {
-    state.localClicks += amount;
+    state.localClicks = added;
   }
   state.missionProgress.clickCount += amount;
   notifyStateChange();
@@ -273,11 +277,12 @@ function addClicks(amount) {
 
 function spendClicks(amount) {
   const current = getClicks();
-  if (current < amount) return false;
+  if (bigLt(current, amount)) return false;
+  const result = bigSub(current, amount);
   if (state.currentUser) {
-    state.currentUser.clicks -= amount;
+    state.currentUser.clicks = result;
   } else {
-    state.localClicks -= amount;
+    state.localClicks = result;
   }
   notifyStateChange();
   return true;
@@ -285,10 +290,8 @@ function spendClicks(amount) {
 
 // ---------- 4. Upgrades & Relics & Effects & Offline CPS ----------
 function getArmyCost(item, count) {
-  const MAX_COST = 1e15;
-  const candidate = item.baseCost * Math.pow(10, count * count);
-  if (!isFinite(candidate) || candidate > MAX_COST) return MAX_COST;
-  return Math.max(1, Math.floor(candidate));
+  const pow10 = bigPow10AsString(count * count);
+  return bigMul(String(item.baseCost), pow10);
 }
 
 function buyArmy(itemId) {
@@ -331,7 +334,8 @@ function getRelicCost(relic, count) {
   const clicks = getClicks();
   const idx = MULTIPLIER_RELICS.findIndex(r => r.id === relic.id);
   const fraction = 0.05 + (idx / (MULTIPLIER_RELICS.length - 1)) * 0.25;
-  return Math.max(1, Math.floor(clicks * fraction));
+  const num = Math.round(fraction * 100);
+  return bigMax(bigDiv(bigMul(clicks, String(num)), "100"), "1");
 }
 
 function buyRelic(relicId) {
@@ -433,7 +437,7 @@ function getTierInfo(clicks) {
 function calcBattlePower() {
   const clicks = getClicks();
   const cpsPower = state.cps * 5;
-  const clickPower = Math.floor(clicks / 5);
+  const clickPower = Number(bigDiv(clicks, "5"));
   const winPower = (state.warRecords.wins || 0) * 500;
   return cpsPower + clickPower + winPower;
 }
@@ -694,7 +698,7 @@ async function renderRankingView(forceRefresh = false) {
   }
 
   if (currentRankTab === 'clicks') {
-    leaderboard.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
+    leaderboard.sort((a, b) => bigLt(a.clicks || "0", b.clicks || "0") ? 1 : bigGt(a.clicks || "0", b.clicks || "0") ? -1 : 0);
   } else if (currentRankTab === 'power') {
     leaderboard.sort((a, b) => (b.battlePower || 0) - (a.battlePower || 0));
   } else if (currentRankTab === 'honor') {
@@ -1020,8 +1024,8 @@ function handleAdminUserSetClick() {
     showToast('클릭 수를 숫자로 입력해주세요.');
     return;
   }
-  currentAdminEditAccount.clicks = Math.max(0, Math.floor(parseInt(inputEl.value, 10)));
-  showToast(`클릭 수를 ${currentAdminEditAccount.clicks.toLocaleString()}으로 설정했습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
+  currentAdminEditAccount.clicks = String(Math.max(0, Math.floor(parseInt(inputEl.value, 10))));
+  showToast(`클릭 수를 ${currentAdminEditAccount.clicks}으로 설정했습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
 }
 
 function handleAdminUserGive(amount) {
@@ -1029,7 +1033,7 @@ function handleAdminUserGive(amount) {
     showToast('먼저 유저를 선택해주세요.');
     return;
   }
-  currentAdminEditAccount.clicks = (currentAdminEditAccount.clicks || 0) + amount;
+  currentAdminEditAccount.clicks = bigAdd(currentAdminEditAccount.clicks || "0", String(amount));
   const inputEl = document.getElementById('adminUserClickInput');
   if (inputEl) inputEl.value = currentAdminEditAccount.clicks;
   showToast(`+${amount.toLocaleString()} 클릭 지급되었습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
@@ -1324,7 +1328,7 @@ function renderProfileView() {
     statsGrid.innerHTML = `
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">누적 자금</div>
-        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);" title="${clicks.toLocaleString()}">${formatNumber(clicks)}</div>
+        <div style="font-size: 16px; font-weight: 700; color: var(--gold-bright);" title="${formatNumberFull(clicks)}">${formatNumber(clicks)}</div>
       </div>
       <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.25); border-radius: 12px; padding: 12px;">
         <div style="font-size: 11px; color: var(--parchment-dim);">자동 수확 (CPS)</div>
@@ -1440,7 +1444,7 @@ function renderClickerView(clicks, tier) {
     tierLabelEl.textContent = tier.name;
     // 단축 표기 + 전체 숫자 툴팁
     clickCountEl.textContent = formatNumber(clicks);
-    clickCountEl.title = clicks.toLocaleString();
+    clickCountEl.title = typeof clicks === 'string' ? clicks : clicks.toLocaleString();
   }
 
   document.getElementById('cpsLabel').textContent = `자동 수확: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초`;
@@ -1484,18 +1488,18 @@ function renderQuickUpgrades(clicks) {
   const affordableArmies = ARMY_ITEMS.filter(item => {
     const count = state.armies[item.id] || 0;
     const cost = getArmyCost(item, count);
-    return clicks >= cost;
+    return bigGte(clicks, cost);
   });
 
   const affordableRelics = MULTIPLIER_RELICS.filter(r => {
     const rawVal = state.relics[r.id];
     const count = typeof rawVal === 'number' ? rawVal : (rawVal ? 1 : 0);
     const cost = getRelicCost(r, count);
-    return clicks >= cost;
+    return bigGte(clicks, cost);
   });
 
   const affordableEffects = VISUAL_EFFECTS.filter(eff => {
-    return clicks >= eff.cost && !state.effects.includes(eff.id);
+    return bigGte(clicks, String(eff.cost)) && !state.effects.includes(eff.id);
   });
 
   if (affordableArmies.length === 0 && affordableRelics.length === 0 && affordableEffects.length === 0) {
@@ -1574,7 +1578,7 @@ function renderShopView(clicks) {
     armyListEl.innerHTML = ARMY_ITEMS.map(item => {
       const count = state.armies[item.id] || 0;
       const cost = getArmyCost(item, count);
-      const canAfford = clicks >= cost;
+      const canAfford = bigGte(clicks, cost);
       return `
         <div class="item-card">
           <div class="item-icon">${item.icon}</div>
@@ -1583,7 +1587,7 @@ function renderShopView(clicks) {
             <span class="item-desc">${item.desc} (CPS +${item.cps})</span>
           </div>
           <div class="item-action">
-            <button class="buy-btn" data-buy-army="${item.id}" ${canAfford ? '' : 'disabled'} title="${cost.toLocaleString()}">
+            <button class="buy-btn" data-buy-army="${item.id}" ${canAfford ? '' : 'disabled'} title="${cost}">
               고용 (${formatNumber(cost)})
             </button>
           </div>
@@ -1602,7 +1606,7 @@ function renderShopView(clicks) {
       const rawVal = state.relics[r.id];
       const count = typeof rawVal === 'number' ? rawVal : (rawVal ? 1 : 0);
       const cost = getRelicCost(r, count);
-      const canAfford = clicks >= cost;
+      const canAfford = bigGte(clicks, cost);
       return `
         <div class="item-card">
           <div class="item-icon">${r.icon}</div>
@@ -1611,7 +1615,7 @@ function renderShopView(clicks) {
             <span class="item-desc">${r.desc}</span>
           </div>
           <div class="item-action">
-            <button class="buy-btn" data-buy-relic="${r.id}" ${canAfford ? '' : 'disabled'} title="${cost.toLocaleString()}">
+            <button class="buy-btn" data-buy-relic="${r.id}" ${canAfford ? '' : 'disabled'} title="${cost}">
               연마 (${formatNumber(cost)})
             </button>
           </div>
@@ -1629,7 +1633,7 @@ function renderShopView(clicks) {
     effectListEl.innerHTML = VISUAL_EFFECTS.map(eff => {
       const owned = state.effects.includes(eff.id);
       const isEquipped = state.equippedEffect === eff.id;
-      const canAfford = clicks >= eff.cost || owned;
+      const canAfford = bigGte(clicks, String(eff.cost)) || owned;
       return `
         <div class="item-card">
           <div class="item-icon">${eff.icon}</div>
@@ -1665,7 +1669,7 @@ function renderShopView(clicks) {
     offlineListEl.innerHTML = offlineBanner + OFFLINE_CPS_ITEMS.map(item => {
       const count = state.offlineArmies[item.id] || 0;
       const cost = getArmyCost(item, count);
-      const canAfford = clicks >= cost && !!state.currentUser;
+      const canAfford = bigGte(clicks, cost) && !!state.currentUser;
       return `
         <div class="item-card">
           <div class="item-icon">${item.icon}</div>
@@ -2076,7 +2080,7 @@ async function handleLogin() {
     scheduleSave();
   }
 
-  state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
+  state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
   state.avatar = account.avatar || '👑';
   state.armies = account.armies || {};
   state.relics = account.relics || {};
@@ -2134,8 +2138,8 @@ async function handleSignup() {
     await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
   }
 
-  state.currentUser = { id, nickname, clicks: 0 };
-  state.localClicks = 0;
+  state.currentUser = { id, nickname, clicks: "0" };
+  state.localClicks = "0";
   await setSession(id);
   closeModal('authModal');
   renderTopbarActions();
@@ -2484,7 +2488,7 @@ async function init() {
         scheduleSave();
       }
 
-      state.currentUser = { id: account.id, nickname: account.nickname, clicks: account.clicks || 0 };
+      state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
       state.avatar = account.avatar || '👑';
       state.armies = account.armies || {};
       state.relics = account.relics || {};

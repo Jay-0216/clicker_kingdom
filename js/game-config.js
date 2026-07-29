@@ -36,11 +36,33 @@ const SORTED_UNITS = buildNumberUnits();
 /**
  * 숫자를 단축 표기로 변환합니다.
  * 예: 1234567 → "1.23M", 1e19 → "10ht"
- * @param {number} n
+ * @param {number|string} n
  * @param {number} [decimals=2] 소수점 자릿수
  * @returns {string}
  */
 function formatNumber(n, decimals = 2) {
+  if (typeof n === 'string') {
+    if (n === 'Infinity' || n === '∞') return '∞';
+    if (/^-?\d+$/.test(n)) {
+      const len = n.startsWith('-') ? n.length - 1 : n.length;
+      if (len <= 15) return formatNumber(Number(n), decimals);
+      if (n.startsWith('-')) return '-' + formatNumber(n.slice(1), decimals);
+      if (len > 60) return '∞';
+      const exp = len - 1;
+      for (const { value, suffix } of SORTED_UNITS) {
+        const unitExp = Math.round(Math.log10(value));
+        if (exp >= unitExp) {
+          if (suffix === '∞') return '∞';
+          const whole = n.slice(0, len - unitExp);
+          const frac = n.slice(len - unitExp, len - unitExp + decimals);
+          const formatted = frac ? whole + '.' + frac : whole;
+          return `${formatted}${suffix}`;
+        }
+      }
+      return n;
+    }
+    return n;
+  }
   if (!isFinite(n) || isNaN(n)) return '∞';
   if (n < 0) return '-' + formatNumber(-n, decimals);
   if (n >= 1e60) return '∞';
@@ -66,6 +88,11 @@ function formatNumber(n, decimals = 2) {
  * @returns {string}
  */
 function formatNumberFull(n) {
+  if (typeof n === 'string') {
+    if (n === 'Infinity' || n === '∞') return '∞';
+    if (/^-?\d+$/.test(n) && n.length <= 15) return formatNumberFull(Number(n));
+    return formatNumber(n);
+  }
   if (n < 1e4) return Math.floor(n).toLocaleString();
   return `${formatNumber(n)} (${Math.floor(n).toLocaleString()})`;
 }
@@ -436,3 +463,23 @@ const DAILY_MISSIONS = [
     type: 'feedback'
   },
 ];
+
+// ---------- BigInt 기반 무한 정수 유틸리티 (Python 스타일) ----------
+function toBig(val) {
+  if (typeof val === 'bigint') return val;
+  if (typeof val === 'string' && /^-?\d+$/.test(val)) return BigInt(val);
+  if (typeof val === 'number' && isFinite(val) && val <= Number.MAX_SAFE_INTEGER) return BigInt(Math.floor(val));
+  return BigInt(0);
+}
+function bigGte(a, b) { return toBig(a) >= toBig(b); }
+function bigGt(a, b) { return toBig(a) > toBig(b); }
+function bigLt(a, b) { return toBig(a) < toBig(b); }
+function bigLte(a, b) { return toBig(a) <= toBig(b); }
+function bigAdd(a, b) { return (toBig(a) + toBig(b)).toString(); }
+function bigSub(a, b) { return (toBig(a) - toBig(b)).toString(); }
+function bigMul(a, b) { return (toBig(a) * toBig(b)).toString(); }
+function bigDiv(a, b) { return (toBig(a) / toBig(b)).toString(); }
+function bigMax(a, b) { return bigGte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
+function bigMin(a, b) { return bigLte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
+function bigPow10AsString(exp) { return '1' + '0'.repeat(exp); }
+

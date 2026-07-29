@@ -177,7 +177,10 @@ async function supabaseSyncAccount(account) {
   if (!client) return false;
 
   // Ensure all numeric values sent to Supabase are finite (JSON.stringify converts Infinity to null)
-  const safe = (v, fallback = 0) => (typeof v === 'number' && isFinite(v) ? v : fallback);
+  const safe = (v, fallback = 0) => {
+    if (typeof v === 'string' || (typeof v === 'number' && isFinite(v))) return v;
+    return fallback;
+  };
 
   updateCloudSyncState({
     tone: 'syncing',
@@ -337,7 +340,7 @@ async function supabaseFetchAccount(id) {
       id: data.id,
       nickname: data.nickname,
 ***REMOVED***
-      clicks: data.clicks || 0,
+      clicks: String(data.clicks || 0),
       armies: data.armies || {},
       relics: data.relics || {},
       effects: data.effects || [],
