@@ -94,7 +94,7 @@ const KINGDOM_TIERS = [
     gems: 0, crown: false, glow: 0
   },
   {
-    clicks: 1000,
+    clicks: 1e3,           // 1천
     name: '통나무 보루',
     title: '성주',
     core1: '#634b35', core2: '#3d2d1f',
@@ -102,7 +102,7 @@ const KINGDOM_TIERS = [
     gems: 1, crown: false, glow: 0.15
   },
   {
-    clicks: 50000,
+    clicks: 5e9,
     name: '석조 요새',
     title: '영주',
     core1: '#4a525d', core2: '#282d35',
@@ -110,7 +110,7 @@ const KINGDOM_TIERS = [
     gems: 2, crown: false, glow: 0.3
   },
   {
-    clicks: 5000000,           // 500만
+    clicks: 5e11,           // 500만
     name: '번창하는 성채',
     title: '정복왕',
     core1: '#7a2b37', core2: '#42161d',
@@ -118,7 +118,7 @@ const KINGDOM_TIERS = [
     gems: 3, crown: true, glow: 0.5
   },
   {
-    clicks: 500000000,         // 5억
+    clicks: 5e15,         // 5억
     name: '황금 왕국',
     title: '제국 황제',
     core1: '#856a28', core2: '#473812',
@@ -126,7 +126,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.7
   },
   {
-    clicks: 100000000000,      // 1000억
+    clicks: 1e17,      // 1000억
     name: '천상 제국',
     title: '천상 패왕',
     core1: '#4d2b7a', core2: '#281442',
@@ -134,7 +134,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.85
   },
   {
-    clicks: 10000000000000,    // 10조
+    clicks: 1e18,    // 10조
     name: '신의 영역',
     title: '불멸의 신황',
     core1: '#1a3a6b', core2: '#0d1f3b',
@@ -142,7 +142,7 @@ const KINGDOM_TIERS = [
     gems: 5, crown: true, glow: 0.95
   },
   {
-    clicks: 1e15,              // 1000조
+    clicks: 1e20,              // 1000조
     name: '초월의 왕국',
     title: '우주의 지배자',
     core1: '#3b1a6b', core2: '#1f0d3b',
@@ -150,17 +150,17 @@ const KINGDOM_TIERS = [
     gems: 6, crown: true, glow: 1.0
   },
   {
-    clicks: 1e19,              // 약 10해 (10핵타) — 최종 목표
+    clicks: 1e60,              // 약 10해 (10핵타) — 최종 목표
     name: '무한의 영역',
     title: '무한의 존재',
     core1: '#1a1a1a', core2: '#000000',
     borderW: '10px', borderC: '#ffffff',
-    gems: 6, crown: true, glow: 1.2
+    gems: 10, crown: true, glow: 1.2
   },
 ];
 
 // 이 값을 초과하면 beyondMax (신 칭호 해금, 글리치 효과)
-const MAX_TIER_CLICKS = 1e19;
+const MAX_TIER_CLICKS = 1e200;
 
 
 // ---------- 군대 아이템 (Army Items) ----------
@@ -169,7 +169,7 @@ const ARMY_ITEMS = [
     id: 'peasant_spear',
     name: '농민 창병대',
     icon: '🗡️',
-    cps: 1,
+    cps: 0.1,
     baseCost: 15,
     desc: '가장 기본적인 영지 창병 수호대'
   },
@@ -177,7 +177,7 @@ const ARMY_ITEMS = [
     id: 'royal_archer',
     name: '왕실 궁수대',
     icon: '🏹',
-    cps: 5,
+    cps: 0.5,
     baseCost: 100,
     desc: '성벽 위에서 화살을 쏘는 숙련된 정예 궁수'
   },
@@ -185,7 +185,7 @@ const ARMY_ITEMS = [
     id: 'elite_cavalry',
     name: '정예 기병대',
     icon: '🐎',
-    cps: 20,
+    cps: 2,
     baseCost: 1100,
     desc: '전장을 종횡무진 휩쓰는 묵직한 중갑 기병대'
   },
@@ -193,7 +193,7 @@ const ARMY_ITEMS = [
     id: 'siege_catapult',
     name: '공성 투석기',
     icon: '🏰',
-    cps: 80,
+    cps: 8,
     baseCost: 12000,
     desc: '거대한 돌을 날려 적의 전선을 파괴하는 대포'
   },
@@ -201,7 +201,7 @@ const ARMY_ITEMS = [
     id: 'guardian_knight',
     name: '수호 기사단',
     icon: '🛡️',
-    cps: 350,
+    cps: 35,
     baseCost: 130000,
     desc: '왕국의 신성한 맹세를 이행하는 기사단'
   },
@@ -209,7 +209,7 @@ const ARMY_ITEMS = [
     id: 'alchemical_golem',
     name: '연금술 발도 골렘',
     icon: '🤖',
-    cps: 1500,
+    cps: 150,
     baseCost: 1400000,
     desc: '마법 연금술로 연마된 거대한 마도 골렘'
   },
@@ -217,7 +217,7 @@ const ARMY_ITEMS = [
     id: 'arcane_cannon',
     name: '마도 대포 요새',
     icon: '🔫',
-    cps: 7500,
+    cps: 750,
     baseCost: 20000000,
     desc: '마력을 집속시켜 연사하는 차세대 마도 요새'
   },
@@ -225,7 +225,7 @@ const ARMY_ITEMS = [
     id: 'dragon_artillery',
     name: '용의 화염포',
     icon: '☢️',
-    cps: 40000,
+    cps: 4000,
     baseCost: 330000000,
     desc: '드래곤의 불꽃으로 광범위 지대를 태우는 대포'
   },
@@ -233,7 +233,7 @@ const ARMY_ITEMS = [
     id: 'dimensional_citadel',
     name: '차원 왜곡 요새',
     icon: '🛸',
-    cps: 250000,
+    cps: 25000,
     baseCost: 5100000000,
     desc: '시공간 전선을 왜곡시키는 궁극의 제국 요새'
   },
@@ -242,7 +242,7 @@ const ARMY_ITEMS = [
     id: 'celestial_legion',
     name: '천상 정예 군단',
     icon: '✨',
-    cps: 2000000,
+    cps: 200000,
     baseCost: 100000000000,    // 1000억
     desc: '천상에서 내려온 불멸의 정예 군단'
   },
@@ -250,16 +250,16 @@ const ARMY_ITEMS = [
     id: 'void_annihilator',
     name: '허공 소멸포',
     icon: '🌌',
-    cps: 20000000,
-    baseCost: 10000000000000,  // 10조
+    cps: 2000000,
+    baseCost: 100000000000000,  // 10조
     desc: '허공의 에너지를 집속해 적을 소멸시키는 초병기'
   },
   {
     id: 'infinity_engine',
     name: '무한 에너지 기관',
     icon: '♾️',
-    cps: 300000000,
-    baseCost: 1e15,            // 1000조
+    cps: 30000000,
+    baseCost: 1e16,            // 1000조
     desc: '무한한 에너지를 생성하는 신화급 초월 병기'
   },
 ];
@@ -271,7 +271,7 @@ const MULTIPLIER_RELICS = [
     id: 'commander_banner',
     name: '지휘관의 영주 깃발',
     icon: '🚩',
-    cost: 100,
+    cost: 1000,
     addClick: 1,
     mult: 1,
     desc: '클릭당 자금 +1 추가'
@@ -280,7 +280,7 @@ const MULTIPLIER_RELICS = [
     id: 'runed_sword',
     name: '왕국 기사의 명검',
     icon: '🗡️',
-    cost: 500,
+    cost: 500000,
     addClick: 2,
     mult: 1,
     desc: '클릭당 자금 +2 추가'
@@ -289,29 +289,12 @@ const MULTIPLIER_RELICS = [
     id: 'sovereign_seal',
     name: '제왕의 옥새',
     icon: '👑',
-    cost: 10000,
+    cost: 10000000000,
     addClick: 0,
     mult: 2,
     desc: '수동 클릭 자금 2배 증폭'
-  },
-  {
-    id: 'thunder_throne',
-    name: '제국의 천둥 옥좌',
-    icon: '⚡',
-    cost: 250000,
-    addClick: 0,
-    mult: 2,
-    desc: '수동 클릭 자금 2배 추가 증폭'
-  },
-  {
-    id: 'celestial_crown',
-    name: '천상의 정복자 왕관',
-    icon: '🌟',
-    cost: 5000000,
-    addClick: 0,
-    mult: 2,
-    desc: '수동 클릭 자금 2배 추가 증폭'
-  },
+  }
+  
 ];
 
 
@@ -355,7 +338,7 @@ const OFFLINE_CPS_ITEMS = [
     name: '백그라운드 행정 집행관',
     icon: '🏛️',
     offlineCps: 1,
-    baseCost: 200000000,
+    baseCost: 200000000000,
     desc: '웹을 닫아도 백그라운드에서 자금 수확 (초당 +1)'
   },
   {
@@ -363,7 +346,7 @@ const OFFLINE_CPS_ITEMS = [
     name: '시공간 자율 수호 군단',
     icon: '🛡️',
     offlineCps: 5,
-    baseCost: 800000000,
+    baseCost: 8000000000000,
     desc: '자율 작동하는 백그라운드 수호 군단 (초당 +5)'
   },
   {
@@ -371,7 +354,7 @@ const OFFLINE_CPS_ITEMS = [
     name: '차원 왜곡 방치 요새',
     icon: '🛸',
     offlineCps: 15,
-    baseCost: 1400000000,
+    baseCost: 140000000000000,
     desc: '접속 종료 중에도 방치 자금 수확 (초당 +15)'
   },
 ];
@@ -412,7 +395,7 @@ const UNLOCKABLE_TITLES = [
   {
     id: 'title_god',
     name: '신',
-    req: '무한의 영역(10ht) 초월',
+    req: '무한의 영역 초월',
     desc: '무한의 영역을 넘어선 존재'
   },
 ];

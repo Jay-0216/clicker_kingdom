@@ -132,43 +132,16 @@ function getAccountFreshness(account) {
   return Math.max(account.updatedAt || 0, account.lastOfflineTime || 0, account.createdAt || 0);
 }
 
-// 수정: 세션 복구/로그인 시 Supabase와 IndexedDB가 엇갈리면 더 최신 데이터를 선택한다.
 async function loadPreferredAccount(id) {
-  const localAccount = await getAccount(id);
   let cloudAccount = null;
-
   if (typeof supabaseFetchAccount === 'function') {
     cloudAccount = await supabaseFetchAccount(id);
   }
-
-  if (localAccount && cloudAccount) {
-    const localFresh = getAccountFreshness(localAccount);
-    const cloudFresh = getAccountFreshness(cloudAccount);
-    const useCloud = cloudFresh >= localFresh;
-    const chosen = { ...(useCloud ? cloudAccount : localAccount) };
-    const other = useCloud ? localAccount : cloudAccount;
-
-    chosen.clicks = Math.max(chosen.clicks || 0, other.clicks || 0);
-    if ((other.clicks || 0) > (useCloud ? cloudAccount.clicks : localAccount.clicks || 0)) {
-      Object.assign(chosen, other, { clicks: other.clicks });
-    }
-    chosen.updatedAt = Math.max(localFresh, cloudFresh, Date.now());
-
-    await setAccount(chosen);
-
-    if (typeof supabaseSyncAccount === 'function') {
-      await supabaseSyncAccount(chosen);
-    }
-
-    return chosen;
-  }
-
   if (cloudAccount) {
     await setAccount(cloudAccount);
     return cloudAccount;
   }
-
-  return localAccount;
+  return await getAccount(id);
 }
 
 function saveEmergencySnapshot() {
@@ -205,7 +178,7 @@ function applyEmergencySnapshot(account) {
     if (!snap || snap.id !== account.id) return false;
 
     let applied = false;
-    if ((snap.savedAt || 0) > (account.updatedAt || 0) && (snap.clicks || 0) >= (account.clicks || 0)) {
+    if ((snap.clicks || 0) > (account.clicks || 0)) {
       account.clicks = snap.clicks;
       account.armies = snap.armies || account.armies;
       account.relics = snap.relics || account.relics;
@@ -312,7 +285,8 @@ function spendClicks(amount) {
 
 // ---------- 4. Upgrades & Relics & Effects & Offline CPS ----------
 function getArmyCost(item, count) {
-  return Math.floor(item.baseCost * Math.pow(1.15, count));
+  const rate = Math.min(2 + count * 0.2, 100);
+  return Math.floor(item.baseCost * Math.pow(rate, count));
 }
 
 function buyArmy(itemId) {
@@ -831,7 +805,6 @@ function renderAdminView() {
     if (loginForm) loginForm.hidden = true;
     if (dashboard) dashboard.hidden = false;
     loadAdminFeedbacks();
-    loadAdminUsers();
     renderCloudStatus();
   } else {
     if (loginForm) loginForm.hidden = false;
@@ -907,6 +880,8 @@ function renderAdminUsersList(container, users) {
   });
 }
 
+let currentAdminEditAccount = null;
+
 async function openAdminUserDetail(userId) {
   const detailEl = document.getElementById('adminUserDetail');
   const nameEl = document.getElementById('adminDetailName');
@@ -918,10 +893,163 @@ async function openAdminUserDetail(userId) {
     return;
   }
 
+  currentAdminEditAccount = account;
   nameEl.textContent = `${account.nickname} (${account.id})`;
+
   const inputEl = document.getElementById('adminUserClickInput');
   if (inputEl) inputEl.value = account.clicks || 0;
+
+  // Populate army buttons
+  const armyContainer = document.getElementById('adminUserArmyBtns');
+  if (armyContainer) {
+    armyContainer.innerHTML = ARMY_ITEMS.map(item => {
+      const count = (account.armies && account.armies[item.id]) || 0;
+      return `
+        <div style="display:flex;align-items:center;gap:4px;background:rgba(0,0,0,0.3);border-radius:6px;padding:4px 8px;">
+          <span>${item.icon}</span>
+          <span style="font-size:11px;color:var(--parchment);">${item.name}</span>
+          <button class="mini-btn" data-admin-item="army" data-item-id="${item.id}" data-delta="-1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#ff8080;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
+          <span style="font-size:12px;min-width:20px;text-align:center;color:var(--gold-bright);" id="adminArmyCount_${item.id}">${count}</span>
+          <button class="mini-btn" data-admin-item="army" data-item-id="${item.id}" data-delta="1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#80ff80;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
+        </div>
+      `;
+    }).join('');
+    armyContainer.querySelectorAll('[data-admin-item="army"]').forEach(btn => {
+      btn.onclick = () => handleAdminItemChange('army', btn.dataset.itemId, parseInt(btn.dataset.delta));
+    });
+  }
+
+  // Populate relic buttons
+  const relicContainer = document.getElementById('adminUserRelicBtns');
+  if (relicContainer) {
+    relicContainer.innerHTML = MULTIPLIER_RELICS.map(r => {
+      const rawVal = account.relics && account.relics[r.id];
+      const count = typeof rawVal === 'number' ? rawVal : (rawVal ? 1 : 0);
+      return `
+        <div style="display:flex;align-items:center;gap:4px;background:rgba(0,0,0,0.3);border-radius:6px;padding:4px 8px;">
+          <span>${r.icon}</span>
+          <span style="font-size:11px;color:var(--parchment);">${r.name}</span>
+          <button class="mini-btn" data-admin-item="relic" data-item-id="${r.id}" data-delta="-1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#ff8080;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
+          <span style="font-size:12px;min-width:20px;text-align:center;color:var(--gold-bright);" id="adminRelicCount_${r.id}">${count}</span>
+          <button class="mini-btn" data-admin-item="relic" data-item-id="${r.id}" data-delta="1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#80ff80;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
+        </div>
+      `;
+    }).join('');
+    relicContainer.querySelectorAll('[data-admin-item="relic"]').forEach(btn => {
+      btn.onclick = () => handleAdminItemChange('relic', btn.dataset.itemId, parseInt(btn.dataset.delta));
+    });
+  }
+
+  // Populate effect buttons
+  const effectContainer = document.getElementById('adminUserEffectBtns');
+  if (effectContainer) {
+    effectContainer.innerHTML = VISUAL_EFFECTS.map(eff => {
+      const owned = account.effects && account.effects.includes(eff.id);
+      return `
+        <button class="buy-btn" data-admin-effect="${eff.id}" style="font-size:11px;padding:4px 10px;${owned ? 'background:rgba(212,175,55,0.3);border-color:var(--gold);' : ''}">
+          ${eff.icon} ${eff.name} ${owned ? '✅' : '❌'}
+        </button>
+      `;
+    }).join('');
+    effectContainer.querySelectorAll('[data-admin-effect]').forEach(btn => {
+      btn.onclick = () => handleAdminEffectToggle(btn.dataset.adminEffect);
+    });
+  }
+
   detailEl.hidden = false;
+}
+
+function handleAdminItemChange(type, itemId, delta) {
+  if (!currentAdminEditAccount) return;
+  if (type === 'army') {
+    if (!currentAdminEditAccount.armies) currentAdminEditAccount.armies = {};
+    const cur = currentAdminEditAccount.armies[itemId] || 0;
+    const next = Math.max(0, cur + delta);
+    currentAdminEditAccount.armies[itemId] = next;
+    const countEl = document.getElementById(`adminArmyCount_${itemId}`);
+    if (countEl) countEl.textContent = next;
+  } else if (type === 'relic') {
+    if (!currentAdminEditAccount.relics) currentAdminEditAccount.relics = {};
+    const raw = currentAdminEditAccount.relics[itemId];
+    const cur = typeof raw === 'number' ? raw : (raw ? 1 : 0);
+    const next = Math.max(0, cur + delta);
+    currentAdminEditAccount.relics[itemId] = next;
+    const countEl = document.getElementById(`adminRelicCount_${itemId}`);
+    if (countEl) countEl.textContent = next;
+  }
+}
+
+function handleAdminEffectToggle(effectId) {
+  if (!currentAdminEditAccount) return;
+  if (!currentAdminEditAccount.effects) currentAdminEditAccount.effects = [];
+  const idx = currentAdminEditAccount.effects.indexOf(effectId);
+  if (idx >= 0) {
+    currentAdminEditAccount.effects.splice(idx, 1);
+  } else {
+    currentAdminEditAccount.effects.push(effectId);
+  }
+  // Re-render effect buttons
+  const effectContainer = document.getElementById('adminUserEffectBtns');
+  if (effectContainer) {
+    effectContainer.innerHTML = VISUAL_EFFECTS.map(eff => {
+      const owned = currentAdminEditAccount.effects.includes(eff.id);
+      return `
+        <button class="buy-btn" data-admin-effect="${eff.id}" style="font-size:11px;padding:4px 10px;${owned ? 'background:rgba(212,175,55,0.3);border-color:var(--gold);' : ''}">
+          ${eff.icon} ${eff.name} ${owned ? '✅' : '❌'}
+        </button>
+      `;
+    }).join('');
+    effectContainer.querySelectorAll('[data-admin-effect]').forEach(btn => {
+      btn.onclick = () => handleAdminEffectToggle(btn.dataset.adminEffect);
+    });
+  }
+}
+
+function handleAdminUserSetClick() {
+  if (!currentAdminEditAccount) {
+    showToast('먼저 유저를 선택해주세요.');
+    return;
+  }
+  const inputEl = document.getElementById('adminUserClickInput');
+  if (!inputEl || inputEl.value === '' || isNaN(inputEl.value)) {
+    showToast('클릭 수를 숫자로 입력해주세요.');
+    return;
+  }
+  currentAdminEditAccount.clicks = Math.max(0, Math.floor(parseInt(inputEl.value, 10)));
+  showToast(`클릭 수를 ${currentAdminEditAccount.clicks.toLocaleString()}으로 설정했습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
+}
+
+function handleAdminUserGive(amount) {
+  if (!currentAdminEditAccount) {
+    showToast('먼저 유저를 선택해주세요.');
+    return;
+  }
+  currentAdminEditAccount.clicks = (currentAdminEditAccount.clicks || 0) + amount;
+  const inputEl = document.getElementById('adminUserClickInput');
+  if (inputEl) inputEl.value = currentAdminEditAccount.clicks;
+  showToast(`+${amount.toLocaleString()} 클릭 지급되었습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
+}
+
+async function handleAdminUserSave() {
+  if (!currentAdminEditAccount) {
+    showToast('저장할 유저가 없습니다.');
+    return;
+  }
+  const acc = currentAdminEditAccount;
+  acc.updatedAt = Date.now();
+  await setAccount(acc);
+  if (typeof supabaseSyncAccount === 'function') {
+    const ok = await supabaseSyncAccount(acc);
+    if (ok) {
+      clearPendingSync();
+      showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB + Supabase에 저장되었습니다.`);
+    } else {
+      savePendingSync(acc);
+      showToast(`💾 ${acc.nickname}님의 데이터를 로컬에 저장했지만 클라우드 동기화에 실패했습니다. 자동 재시도 중...`);
+    }
+  } else {
+    showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB에 저장되었습니다.`);
+  }
 }
 
 function handleAdminCustomClickSet() {
@@ -1658,6 +1786,36 @@ function spawnParticle(x, y) {
 let saveQueued = false;
 let saveTimeout = null;
 
+const PENDING_SYNC_KEY = 'ck_pending_sync';
+
+function savePendingSync(account) {
+  try {
+    localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify({ account, savedAt: Date.now() }));
+  } catch (e) { /* localStorage full */ }
+}
+
+function clearPendingSync() {
+  try { localStorage.removeItem(PENDING_SYNC_KEY); } catch (e) {}
+}
+
+function getPendingSync() {
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+async function retryPendingSync() {
+  const pending = getPendingSync();
+  if (!pending || !pending.account) return;
+  if (typeof supabaseSyncAccount !== 'function') return;
+  const ok = await supabaseSyncAccount(pending.account);
+  if (ok) {
+    clearPendingSync();
+    console.log('Pending cloud sync completed');
+  }
+}
+
 function scheduleSave() {
   saveQueued = true;
   clearTimeout(saveTimeout);
@@ -1724,9 +1882,13 @@ async function flushSave() {
     account.updatedAt = Date.now(); // 수정: 로컬 캐시에도 최신 저장 시각을 남겨 클라우드와 비교 가능하게 한다.
     await setAccount(account);
 
-    // 수정: 저장이 끝나기 전에 페이지 상태가 바뀌어도 클라우드 반영 확률을 높이도록 await 한다.
     if (typeof supabaseSyncAccount === 'function') {
-      await supabaseSyncAccount(account);
+      const ok = await supabaseSyncAccount(account);
+      if (ok) {
+        clearPendingSync();
+      } else {
+        savePendingSync(account);
+      }
     }
   }
 
@@ -2193,6 +2355,16 @@ function setupEventListeners() {
   const adminLoadUsersBtn = document.getElementById('adminLoadUsers');
   if (adminLoadUsersBtn) adminLoadUsersBtn.onclick = loadAdminUsers;
 
+  const adminUserSetClickBtn = document.getElementById('adminUserSetClick');
+  if (adminUserSetClickBtn) adminUserSetClickBtn.onclick = handleAdminUserSetClick;
+
+  const adminUserSaveBtn = document.getElementById('adminUserSave');
+  if (adminUserSaveBtn) adminUserSaveBtn.onclick = handleAdminUserSave;
+
+  document.querySelectorAll('.admin-user-give').forEach(btn => {
+    btn.onclick = () => handleAdminUserGive(parseInt(btn.dataset.amt, 10));
+  });
+
   // Offline Harvest Claim Button
   const offlineClaimBtn = document.getElementById('offlineClaimBtn');
   if (offlineClaimBtn) {
@@ -2295,6 +2467,9 @@ async function init() {
     // 세션이 없어도 스냅셟이 남아 있으면 정리
     try { localStorage.removeItem('ck_emergency_snapshot'); } catch (e) {}
   }
+
+  retryPendingSync();
+  setInterval(retryPendingSync, 30000);
 
   renderTopbarActions();
   switchView('landing');
