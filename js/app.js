@@ -285,10 +285,8 @@ function spendClicks(amount) {
 
 // ---------- 4. Upgrades & Relics & Effects & Offline CPS ----------
 function getArmyCost(item, count) {
-  const clicks = getClicks();
-  const base = Math.floor(clicks * 0.2);
   const growth = Math.pow(3, count);
-  return Math.max(1, Math.floor(base * growth));
+  return Math.max(1, Math.floor(item.baseCost * growth));
 }
 
 function buyArmy(itemId) {
