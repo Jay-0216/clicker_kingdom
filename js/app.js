@@ -937,7 +937,7 @@ function switchView(viewName) {
   }
 
   state.currentView = viewName;
-  const views = ['landingView', 'clickerView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
+  const views = ['landingView', 'clickerView', 'armyView', 'shopView', 'battleView', 'shooterView', 'rankingView', 'titlesView', 'missionsView', 'adminView', 'profileView'];
   views.forEach(vId => {
     const el = document.getElementById(vId);
     if (el) el.hidden = true;
