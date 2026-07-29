@@ -101,13 +101,13 @@ function formatNumberFull(n) {
 // 단계별 요구 클릭 수 (지수적 증가):
 //   0 → 초라한 오두막:  0
 //   1 → 통나무 보루:    1,000
-//   2 → 석조 요새:      50,000
-//   3 → 번창하는 성채:  5,000,000 (500만)
-//   4 → 황금 왕국:      500,000,000 (5억)
-//   5 → 천상 제국:      100,000,000,000 (1000억)
-//   6 → 신의 영역:      10,000,000,000,000 (10조)
-//   7 → 초월의 왕국:    1,000,000,000,000,000 (1000조)
-//   8 → 무한의 영역:    1e19 ≈ 10해 (10핵타)  ← 최종 목표
+//   2 → 석조 요새:      5,000,000,000 (50억)
+//   3 → 번창하는 성채:  500,000,000,000 (5000억)
+//   4 → 황금 왕국:      5,000,000,000,000,000 (5000조)
+//   5 → 천상 제국:      100,000,000,000,000,000 (10경)
+//   6 → 신의 영역:      1,000,000,000,000,000,000 (100경)
+//   7 → 초월의 왕국:    100,000,000,000,000,000,000 (100해)
+//   8 → 무한의 영역:    1e60 (1간)  ← 최종 목표
 const KINGDOM_TIERS = [
   {
     clicks: 0,
@@ -134,7 +134,7 @@ const KINGDOM_TIERS = [
     gems: 2, crown: false, glow: 0.3
   },
   {
-    clicks: 5e11,           // 500만
+    clicks: 5e11,           // 5000억
     name: '번창하는 성채',
     title: '정복왕',
     core1: '#7a2b37', core2: '#42161d',
@@ -142,7 +142,7 @@ const KINGDOM_TIERS = [
     gems: 3, crown: true, glow: 0.5
   },
   {
-    clicks: 5e15,         // 5억
+    clicks: 5e15,         // 5000조
     name: '황금 왕국',
     title: '제국 황제',
     core1: '#856a28', core2: '#473812',
@@ -150,7 +150,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.7
   },
   {
-    clicks: 1e17,      // 1000억
+    clicks: 1e17,      // 10경
     name: '천상 제국',
     title: '천상 패왕',
     core1: '#4d2b7a', core2: '#281442',
@@ -158,7 +158,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.85
   },
   {
-    clicks: 1e18,    // 10조
+    clicks: 1e18,    // 100경
     name: '신의 영역',
     title: '불멸의 신황',
     core1: '#1a3a6b', core2: '#0d1f3b',
@@ -166,7 +166,7 @@ const KINGDOM_TIERS = [
     gems: 5, crown: true, glow: 0.95
   },
   {
-    clicks: 1e20,              // 1000조
+    clicks: 1e20,              // 100해
     name: '초월의 왕국',
     title: '우주의 지배자',
     core1: '#3b1a6b', core2: '#1f0d3b',
@@ -174,7 +174,7 @@ const KINGDOM_TIERS = [
     gems: 6, crown: true, glow: 1.0
   },
   {
-    clicks: 1e60,              // 약 10해 (10핵타) — 최종 목표
+    clicks: 1e60,              // 1간 — 최종 목표
     name: '무한의 영역',
     title: '무한의 존재',
     core1: '#1a1a1a', core2: '#000000',
@@ -465,7 +465,7 @@ const DAILY_MISSIONS = [
 function toBig(val) {
   if (typeof val === 'bigint') return val;
   if (typeof val === 'string' && /^-?\d+$/.test(val)) return BigInt(val);
-  if (typeof val === 'number' && isFinite(val) && val <= Number.MAX_SAFE_INTEGER) return BigInt(Math.floor(val));
+  if (typeof val === 'number' && isFinite(val)) return BigInt(Math.floor(val));
   return BigInt(0);
 }
 function bigGte(a, b) { return toBig(a) >= toBig(b); }

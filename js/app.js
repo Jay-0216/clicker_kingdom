@@ -23,33 +23,7 @@ function openDB() {
   });
 }
 
-async function hashPassword(pw) {
-  // PBKDF2 with random salt, 100k iterations
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
-  const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
-  const saltB64 = btoa(String.fromCharCode(...salt));
-  const hashB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
-  return `pbkdf2:${saltB64}:${hashB64}`;
-}
-
-async function verifyPassword(pw, storedHash) {
-  if (storedHash && storedHash.startsWith('pbkdf2:')) {
-    const parts = storedHash.split(':');
-    if (parts.length !== 3) return false;
-    const salt = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
-    const expectedHash = parts[2];
-    const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
-    const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
-    const computedB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
-    return computedB64 === expectedHash;
-  }
-  // Legacy SHA-256 support (migration path)
-  const enc = new TextEncoder().encode(pw);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  const legacyHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  return legacyHash === storedHash;
-}
+// hashPassword/verifyPassword removed — now using Supabase Auth (email/password)
 
 async function getAccount(id) {
   try {
@@ -138,6 +112,10 @@ async function saveFeedback(fb) {
 }
 
 async function getSession() {
+  if (typeof supabaseGetCurrentUserId === 'function') {
+    const userId = await supabaseGetCurrentUserId();
+    if (userId) return { id: userId };
+  }
   const data = localStorage.getItem('ck_session');
   return data ? JSON.parse(data) : null;
 }
@@ -155,14 +133,16 @@ function getAccountFreshness(account) {
 }
 
 async function loadPreferredAccount(id) {
-  let cloudAccount = null;
-  if (typeof supabaseFetchAccount === 'function') {
-    cloudAccount = await supabaseFetchAccount(id);
+  // Try Supabase first (authenticated). The id param is kept for backward compat
+  // but the authoritative source is the authenticated user.
+  if (typeof supabaseLoadAccount === 'function') {
+    const cloudAccount = await supabaseLoadAccount();
+    if (cloudAccount) {
+      await setAccount(cloudAccount);
+      return cloudAccount;
+    }
   }
-  if (cloudAccount) {
-    await setAccount(cloudAccount);
-    return cloudAccount;
-  }
+  // Fallback to IndexedDB (legacy local accounts)
   return await getAccount(id);
 }
 
@@ -540,6 +520,11 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
     battleTimeLeft--;
     document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
+    if (battleTimeLeft <= 0) {
+      endBattle();
+      return;
+    }
+
     // Real-time synchronization for room battles via Supabase
     if (activeRoomCode && typeof supabaseFetchRoom === 'function' && typeof supabaseSubmitBattleTaps === 'function') {
       // Sync my taps to Cloud
@@ -556,10 +541,6 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
     }
 
     updateFrontlineVisual();
-
-    if (battleTimeLeft <= 0) {
-      endBattle();
-    }
   }, 1000);
 }
 
@@ -692,7 +673,7 @@ async function renderRankingView(forceRefresh = false) {
       cloudList.forEach(cloudEntry => {
         const idx = leaderboard.findIndex(e => e.id === cloudEntry.id);
         if (idx >= 0) {
-          if ((cloudEntry.clicks || 0) > (leaderboard[idx].clicks || 0)) {
+          if (bigGt(cloudEntry.clicks || "0", leaderboard[idx].clicks || "0")) {
             leaderboard[idx] = cloudEntry;
           }
         } else {
@@ -1742,8 +1723,8 @@ async function flushSave() {
     account.updatedAt = Date.now(); // 수정: 로컬 캐시에도 최신 저장 시각을 남겨 클라우드와 비교 가능하게 한다.
     await setAccount(account);
 
-    if (typeof supabaseSyncAccount === 'function') {
-      const ok = await supabaseSyncAccount(account);
+    if (typeof supabaseSaveAccount === 'function') {
+      const ok = await supabaseSaveAccount(account);
       if (ok) {
         clearPendingSync();
       } else {
@@ -1880,30 +1861,41 @@ async function handleCloudRefresh() {
 }
 
 async function handleLogin() {
-  const id = document.getElementById('loginId').value.trim();
+  const email = document.getElementById('loginEmail').value.trim();
   const pw = document.getElementById('loginPw').value;
   const errEl = document.getElementById('loginError');
   errEl.textContent = '';
-  if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
+  if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await loadPreferredAccount(id);
-  if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
-
-  const valid = await verifyPassword(pw, account.passwordHash);
-  if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
-
-  // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
-  if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
-    account.passwordHash = await hashPassword(pw);
-    await setAccount(account);
+  if (typeof supabaseSignIn !== 'function') {
+    errEl.textContent = 'Supabase 연결을 확인해 주세요.';
+    return;
   }
+
+  const result = await supabaseSignIn(email, pw);
+  if (result.error) {
+    errEl.textContent = result.error.message === 'Invalid login credentials'
+      ? '이메일 또는 비밀번호가 올바르지 않아요.'
+      : `로그인 실패: ${result.error.message}`;
+    return;
+  }
+
+  const account = await supabaseLoadAccount();
+  if (!account) {
+    errEl.textContent = '계정 데이터를 불러오지 못했어요. 새로 가입해 주세요.';
+    await supabaseSignOut();
+    return;
+  }
+
+  // Cache locally
+  await setAccount(account);
 
   if (applyEmergencySnapshot(account)) {
     await setAccount(account);
     scheduleSave();
   }
 
-  state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
+  state.currentUser = { id: account.user_id, nickname: account.nickname, clicks: String(account.clicks || 0) };
   state.avatar = account.avatar || '👑';
   state.armies = account.armies || {};
   state.relics = account.relics || {};
@@ -1918,10 +1910,9 @@ async function handleLogin() {
   recalculateCPS();
   recalculateMultipliers();
 
-  // Process Offline Background CPS Harvest Modal
   checkOfflineHarvest(account.lastOfflineTime);
 
-  await setSession(account.id);
+  await setSession(account.user_id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -1930,40 +1921,64 @@ async function handleLogin() {
 
 async function handleSignup() {
   const nickname = document.getElementById('signupNickname').value.trim();
-  const id = document.getElementById('signupId').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
   const pw = document.getElementById('signupPw').value;
   const pw2 = document.getElementById('signupPw2').value;
   const errEl = document.getElementById('signupError');
   errEl.textContent = '';
 
-  if (!nickname || !id || !pw || !pw2) { errEl.textContent = '모든 항목을 입력해 주세요.'; return; }
+  if (!nickname || !email || !pw || !pw2) { errEl.textContent = '모든 항목을 입력해 주세요.'; return; }
   if (nickname.length > 12) { errEl.textContent = '닉네임은 12자 이하로 입력해 주세요.'; return; }
-  if (id.length < 3) { errEl.textContent = '아이디는 3자 이상으로 입력해 주세요.'; return; }
-  if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
+  if (!email.includes('@')) { errEl.textContent = '올바른 이메일 주소를 입력해 주세요.'; return; }
+  if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
 
-  const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
-  if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
-
-  const passwordHash = await hashPassword(pw);
-  const account = {
-    id, nickname, passwordHash, clicks: 0,
-    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
-    warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
-    missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
-    lastOfflineTime: Date.now(),
-    createdAt: Date.now(),
-    updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
-  };
-
-  await setAccount(account);
-  if (typeof supabaseSyncAccount === 'function') {
-    await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+  if (typeof supabaseSignUp !== 'function') {
+    errEl.textContent = 'Supabase 연결을 확인해 주세요.';
+    return;
   }
 
-  state.currentUser = { id, nickname, clicks: "0" };
+  const result = await supabaseSignUp(email, pw, nickname);
+  if (result.error) {
+    errEl.textContent = `가입 실패: ${result.error.message}`;
+    return;
+  }
+
+  // If email confirmation is required, Supabase sends a confirmation email.
+  // For now, proceed immediately (user_override_confirmation or disable confirmation in Supabase settings).
+  const userId = await supabaseGetCurrentUserId();
+  if (!userId) {
+    errEl.textContent = '자동 로그인에 실패했어요. 로그인 페이지에서 로그인해 주세요.';
+    return;
+  }
+
+  const account = {
+    user_id: userId,
+    nickname,
+    clicks: "0",
+    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {},
+    equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
+    warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
+    missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
+    battlePower: 0, wins: 0,
+    lastOfflineTime: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  // Save to Supabase first, then cache locally
+  if (typeof supabaseSaveAccount === 'function') {
+    const ok = await supabaseSaveAccount(account);
+    if (!ok) {
+      errEl.textContent = '계정 저장에 실패했어요. 다시 시도해 주세요.';
+      await supabaseSignOut();
+      return;
+    }
+  }
+  await setAccount(account);
+
+  state.currentUser = { id: userId, nickname, clicks: "0" };
   state.localClicks = "0";
-  await setSession(id);
+  await setSession(userId);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -1976,6 +1991,9 @@ async function handleLogout() {
   state.currentUser = null;
   state.localClicks = 0;
   await clearSession();
+  if (typeof supabaseSignOut === 'function') {
+    supabaseSignOut();
+  }
   renderTopbarActions();
   switchView('landing');
   showToast('로그아웃 됐어요.');
@@ -2288,7 +2306,9 @@ async function init() {
   const cloudRefreshBtn = document.getElementById('cloudStatusRefreshBtn');
   if (cloudRefreshBtn) cloudRefreshBtn.onclick = handleCloudRefresh;
 
-  if (typeof supabaseRunDiagnostics === 'function') {
+  if (typeof supabaseInit === 'function') {
+    supabaseInit();
+  } else if (typeof supabaseRunDiagnostics === 'function') {
     supabaseRunDiagnostics();
   }
 

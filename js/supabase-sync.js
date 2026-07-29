@@ -1,21 +1,33 @@
 // ============================================================================
 // Clicker Kingdom - Supabase Cloud Synchronization Helper
 // ============================================================================
-// SECURITY NOTE:
-// - password_hash is NEVER sent to or read from Supabase (auth stays local in IndexedDB).
-//   See app.js hashPassword() for client-side PBKDF2 hashing.
-// - The accounts table MUST have RLS policies:
-//   - anon: SELECT only (no INSERT/UPDATE/DELETE)
-//   - service_role: full CRUD (for future server-side admin)
-//   - Apply: ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
-//     CREATE POLICY "anon_read_only" ON accounts FOR SELECT TO anon USING (true);
-//   - leaderboard and rooms tables should also use RLS:
-//     CREATE POLICY "anon_read_write" ON leaderboard FOR ALL TO anon USING (true);
-//     CREATE POLICY "anon_read_write" ON rooms FOR ALL TO anon USING (true);
+// SECURITY ARCHITECTURE (2026-07-29) — Full Supabase Auth + RLS:
+//   ┌──────────────────────────────────────────────────────────────────┐
+//   │ 인증: Supabase Auth (email/password)                            │
+//   │   - Supabase JS 클라이언트가 세션을 localStorage에 자동 저장     │
+//   │   - 페이지 로드 시 getSupabaseClient()가 세션 복원               │
+//   │   - 모든 accounts CRUD는 auth.uid() 기반 RLS로 보호             │
+//   ├──────────────────────────────────────────────────────────────────┤
+//   │ 읽기: Supabase anon key + RLS                                    │
+//   │   - accounts: auth.uid() == user_id 인 경우만 접근 가능          │
+//   │   - leaderboard: public SELECT (anon)                           │
+//   │   - rooms: public ALL (친구 대전)                                │
+//   ├──────────────────────────────────────────────────────────────────┤
+//   │ 쓰기:                                                           │
+//   │   - accounts: client.auth JWT로 upsert (RLS가 user_id 검증)      │
+//   │   - leaderboard: Edge Function이 service_role로 upsert           │
+//   │   - rooms: anon key로 직접 쓰기                                  │
+//   ├──────────────────────────────────────────────────────────────────┤
+//   │ Edge Function: JWT 검증 → user_id 검증 → BigInt 범위 체크 →      │
+//   │                  service_role로 leaderboard upsert               │
+//   └──────────────────────────────────────────────────────────────────┘
+// REQUIRED SQL: supabase/migrations/001_full_auth.sql 참고
+// EDGE FUNCTION DEPLOY: supabase functions deploy upsert-leaderboard
 // ============================================================================
 
 const SUPABASE_URL = "https://ufisfakmsaiicetlzjal.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmaXNmYWttc2FpaWNldGx6amFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzQyMzEsImV4cCI6MjEwMDc1MDIzMX0.J9SYa4O5CxekBezv_HP4gGiF0OtjVj1WZjXlR8O2mbI";
+const EDGE_FUNCTION_URL = SUPABASE_URL + "/functions/v1/upsert-leaderboard";
 
 let supabaseClient = null;
 const cloudSyncState = {
@@ -33,6 +45,9 @@ function isRetryableError(error) {
   const code = error.code ? String(error.code) : '';
   const status = error.status || 0;
   const msg = (error.message || '').toLowerCase();
+  // Edge Function specific: AUTH_UNAVAILABLE is not retryable
+  if (code === 'NO_SESSION') return false;
+  if (code === 'EDGE_ERROR') return false;
   // 4xx: permanent (bad request, auth, not found, RLS)
   if (/^(4(?!29)\d{2})$/.test(code) || (status >= 400 && status < 500 && status !== 429)) return false;
   if (code === '42501') return false; // RLS policy
@@ -60,27 +75,27 @@ function formatCloudError(scope, error) {
   const code = error && error.code ? String(error.code) : '';
   const message = error && error.message ? String(error.message) : '알 수 없는 오류';
 
-  if (scope === 'leaderboard' && message.includes("updated_at")) {
+  if (scope === 'leaderboard' && (code === 'EDGE_ERROR' || code === 'NO_SESSION')) {
     return {
       tone: 'warning',
-      summary: '계정 저장은 됐지만 랭킹 동기화는 실패했어.',
-      detail: 'leaderboard 테이블에 updated_at 열이 없어서 랭킹 업서트가 막히고 있어.'
+      summary: '랭킹 동기화에 실패했어.',
+      detail: `서버 검증 레이어(${code}): ${message}`
     };
   }
 
   if (scope === 'rooms' && code === '42501') {
     return {
-      tone: 'error',
-      summary: '친구 대전 룸 코드를 클라우드에 저장하지 못했어.',
-      detail: 'rooms 테이블의 RLS 정책이 anon 쓰기를 막고 있어.'
+      tone: 'warning',
+      summary: '친구 대전 룸 코드를 클라우드에 저장하지 못했어 (RLS 차단).',
+      detail: 'Supabase 콘솔에서 rooms 테이블 anon INSERT를 허용해야 해.'
     };
   }
 
   if (scope === 'accounts' && code === '42501') {
     return {
-      tone: 'error',
+      tone: 'warning',
       summary: '계정 저장 권한이 막혀 있어.',
-      detail: 'accounts 테이블의 RLS 정책이 anon 쓰기를 막고 있어.'
+      detail: '이건 정상이야 — accounts 테이블은 anon 쓰기가 차단되어 있어.'
     };
   }
 
@@ -145,6 +160,97 @@ function getSupabaseClient() {
   return null;
 }
 
+async function supabaseSignUp(email, password, nickname) {
+  const client = getSupabaseClient();
+  if (!client) return { error: { message: 'Supabase client not available' } };
+  try {
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+      options: { data: { nickname } }
+    });
+    if (error) return { error };
+    return { data, session: data.session };
+  } catch (err) {
+    return { error: { message: err.message } };
+  }
+}
+
+async function supabaseSignIn(email, password) {
+  const client = getSupabaseClient();
+  if (!client) return { error: { message: 'Supabase client not available' } };
+  try {
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) return { error };
+    return { data, session: data.session };
+  } catch (err) {
+    return { error: { message: err.message } };
+  }
+}
+
+async function supabaseSignOut() {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    await client.auth.signOut();
+  } catch (_) {}
+}
+
+async function supabaseGetCurrentUserId() {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.auth.getUser();
+    if (error || !data?.user) return null;
+    return data.user.id;
+  } catch {
+    return null;
+  }
+}
+
+async function supabaseGetAccessToken() {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.auth.getSession();
+    if (error || !data?.session?.access_token) return null;
+    return data.session.access_token;
+  } catch {
+    return null;
+  }
+}
+
+async function supabaseCallEdgeFunction(payload) {
+  const token = await supabaseGetAccessToken();
+  if (!token) {
+    return { ok: false, error: { message: 'Not signed in', code: 'NO_SESSION' } };
+  }
+
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: { message: result.error || 'Edge Function error', code: 'EDGE_ERROR', status: res.status } };
+    }
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: { message: err.message || 'Network error', code: 'NETWORK_ERROR' } };
+  }
+}
+
+async function supabaseInit() {
+  getSupabaseClient();
+  supabaseRunDiagnostics();
+}
+
 async function supabaseRunDiagnostics() {
   const client = getSupabaseClient();
   if (!client) return getCloudSyncState();
@@ -183,23 +289,34 @@ async function supabaseRunDiagnostics() {
   return getCloudSyncState();
 }
 
-// Sync Account to Supabase Cloud
-async function supabaseSyncAccount(account) {
+// Save Account to Supabase (authenticated — RLS verifies user_id = auth.uid())
+async function supabaseSaveAccount(account) {
   const client = getSupabaseClient();
   if (!client) return false;
+
+  const userId = await supabaseGetCurrentUserId();
+  if (!userId) {
+    updateCloudSyncState({
+      tone: 'error',
+      summary: '로그인이 필요해.',
+      detail: 'Supabase에 저장하려면 먼저 로그인해 줘.',
+      lastErrorAt: Date.now()
+    });
+    return false;
+  }
 
   updateCloudSyncState({
     tone: 'syncing',
     summary: '클라우드에 저장 중이야...',
-    detail: `${account.nickname || account.id} 계정 데이터를 Supabase에 반영하는 중이야.`
+    detail: `${account.nickname || ''} 계정을 Supabase에 저장하는 중이야.`
   });
 
   try {
     const { error } = await client
       .from('accounts')
       .upsert({
-        id: account.id,
-        nickname: account.nickname,
+        user_id: userId,
+        nickname: account.nickname || '',
         clicks: account.clicks || "0",
         armies: account.armies || {},
         relics: account.relics || {},
@@ -210,77 +327,117 @@ async function supabaseSyncAccount(account) {
         unlocked_titles: account.unlockedTitles || ['title_novice'],
         war_records: account.warRecords || {},
         mission_progress: account.missionProgress || {},
+        battle_power: account.battlePower || 0,
+        wins: (account.warRecords && account.warRecords.wins) || 0,
         last_offline_time: account.lastOfflineTime || Date.now(),
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      }, { onConflict: 'user_id' });
 
     if (error) {
-      console.warn("Supabase account sync error:", error);
-      const formatted = formatCloudError('accounts', error);
-      const retryable = isRetryableError(error);
+      console.warn("Supabase account save error:", error);
       updateCloudSyncState({
-        tone: formatted.tone,
-        summary: formatted.summary,
-        detail: formatted.detail,
-        lastErrorAt: Date.now(),
-        lastErrorRetryable: retryable
+        tone: 'error',
+        summary: '클라우드 저장 실패.',
+        detail: error.message,
+        lastErrorAt: Date.now()
       });
       return false;
     }
 
-    // Sync to Leaderboard table
-    const { error: leaderboardError } = await client
-      .from('leaderboard')
-      .upsert({
-        id: account.id,
-        nickname: account.nickname,
-        clicks: account.clicks || "0",
-        battle_power: account.battlePower || 0,
-        wins: (account.warRecords && account.warRecords.wins) || 0,
-        title: account.equippedTitle || 'title_novice',
-        last_online: new Date().toISOString()
-      }, { onConflict: 'id' });
+    // Sync to Leaderboard via Edge Function
+    const edgeResult = await supabaseCallEdgeFunction({
+      id: userId,
+      nickname: account.nickname || '',
+      clicks: String(account.clicks || "0"),
+      battle_power: account.battlePower || 0,
+      wins: (account.warRecords && account.warRecords.wins) || 0,
+      title: account.equippedTitle || 'title_novice',
+      last_online: new Date().toISOString()
+    });
 
-    if (leaderboardError) {
-      console.warn("Supabase leaderboard sync error:", leaderboardError);
-      const formatted = formatCloudError('leaderboard', leaderboardError);
-      const retryable = isRetryableError(leaderboardError);
+    if (!edgeResult.ok) {
+      console.warn("Leaderboard sync error:", edgeResult.error);
       updateCloudSyncState({
-        tone: formatted.tone,
-        summary: formatted.summary,
-        detail: formatted.detail,
+        tone: 'warning',
+        summary: '계정은 저장됐지만 랭킹 동기화는 실패했어.',
+        detail: edgeResult.error.message || 'Edge Function 오류',
         lastErrorAt: Date.now(),
-        lastSyncAt: Date.now(),
-        lastErrorRetryable: retryable
+        lastSyncAt: Date.now()
       });
-      return false;
+      return true;
     }
 
     updateCloudSyncState({
       tone: 'success',
-      summary: '클라우드 저장이 완료됐어.',
-      detail: `${account.nickname || account.id} 계정과 랭킹 데이터를 Supabase에 반영했어.`,
+      summary: '클라우드 저장 완료!',
+      detail: `${account.nickname || ''} 계정과 랭킹 데이터를 저장했어.`,
       lastSyncAt: Date.now()
     });
 
-    // Try to sync avatar separately (column may not exist yet)
-    try {
-      await client.from('accounts').update({ avatar: account.avatar || '👑' }).eq('id', account.id);
-    } catch (_) {}
-
     return true;
   } catch (err) {
-    console.warn("Supabase sync exception:", err);
-    const formatted = formatCloudError('accounts', err);
+    console.warn("Supabase save exception:", err);
     updateCloudSyncState({
-      tone: formatted.tone,
-      summary: formatted.summary,
-      detail: formatted.detail,
+      tone: 'error',
+      summary: '클라우드 저장 중 오류.',
+      detail: err.message,
       lastErrorAt: Date.now(),
       lastErrorRetryable: true
     });
     return false;
   }
+}
+
+// Load Account from Supabase (authenticated — RLS verifies user_id = auth.uid())
+async function supabaseLoadAccount() {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const userId = await supabaseGetCurrentUserId();
+  if (!userId) return null;
+
+  try {
+    const { data, error } = await client
+      .from('accounts')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      if (error && error.code !== 'PGRST116') {
+        console.warn("Supabase load error:", error);
+      }
+      return null;
+    }
+
+    return {
+      user_id: data.user_id,
+      nickname: data.nickname,
+      avatar: data.avatar || '👑',
+      clicks: String(data.clicks || 0),
+      armies: data.armies || {},
+      relics: data.relics || {},
+      effects: data.effects || [],
+      equippedEffect: data.equipped_effect || null,
+      offlineArmies: data.offline_armies || {},
+      equippedTitle: data.equipped_title || 'title_novice',
+      unlockedTitles: data.unlocked_titles || ['title_novice'],
+      warRecords: data.war_records || {},
+      missionProgress: data.mission_progress || {},
+      battlePower: data.battle_power || 0,
+      wins: data.wins || 0,
+      lastOfflineTime: data.last_offline_time || Date.now(),
+      updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now()
+    };
+  } catch (err) {
+    console.warn("Supabase load exception:", err);
+    return null;
+  }
+}
+
+// DEPRECATED: replaced by supabaseSaveAccount / supabaseLoadAccount
+async function supabaseSyncAccount(account) {
+  return await supabaseSaveAccount(account);
 }
 
 // Fetch Cloud Leaderboard from Supabase
@@ -323,8 +480,8 @@ async function supabaseFetchLeaderboard() {
   }
 }
 
-// Fetch Cloud Account from Supabase
-async function supabaseFetchAccount(id) {
+// Fetch Cloud Account from Supabase by user_id (UUID)
+async function supabaseFetchAccount(userId) {
   const client = getSupabaseClient();
   if (!client) return null;
 
@@ -332,24 +489,18 @@ async function supabaseFetchAccount(id) {
     const { data, error } = await client
       .from('accounts')
       .select('*')
-      .eq('id', id)
+      .eq('user_id', userId)
       .single();
 
     if (error || !data) {
       if (error && error.code !== 'PGRST116') {
-        const formatted = formatCloudError('accounts', error);
-        updateCloudSyncState({
-          tone: formatted.tone,
-          summary: formatted.summary,
-          detail: formatted.detail,
-          lastErrorAt: Date.now()
-        });
+        console.warn("Supabase fetch account error:", error.message);
       }
       return null;
     }
 
     return {
-      id: data.id,
+      user_id: data.user_id,
       nickname: data.nickname,
       avatar: data.avatar || '👑',
       clicks: String(data.clicks || 0),
@@ -362,6 +513,8 @@ async function supabaseFetchAccount(id) {
       unlockedTitles: data.unlocked_titles || ['title_novice'],
       warRecords: data.war_records || {},
       missionProgress: data.mission_progress || {},
+      battlePower: data.battle_power || 0,
+      wins: data.wins || 0,
       lastOfflineTime: data.last_offline_time || Date.now(),
       updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : Date.now()
     };
