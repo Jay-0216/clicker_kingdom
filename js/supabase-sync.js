@@ -189,6 +189,7 @@ async function supabaseSyncAccount(account) {
         id: account.id,
         nickname: account.nickname,
 ***REMOVED***
+        avatar: account.avatar || '👑',
         clicks: account.clicks || "0",
         armies: account.armies || {},
         relics: account.relics || {},
@@ -334,6 +335,7 @@ async function supabaseFetchAccount(id) {
       id: data.id,
       nickname: data.nickname,
 ***REMOVED***
+      avatar: data.avatar || '👑',
       clicks: String(data.clicks || 0),
       armies: data.armies || {},
       relics: data.relics || {},
