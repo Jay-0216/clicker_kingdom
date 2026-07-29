@@ -1191,7 +1191,7 @@ function spawnEmojiRain(cps) {
 function startEmojiRain(cps) {
   stopEmojiRain();
   if (cps <= 0) return;
-  const interval = Math.max(100, 3000 / (1 + cps * 0.3));
+  const interval = Math.max(10, 3000 / (1 + cps * 0.3));
   emojiRainTimer = setInterval(() => spawnEmojiRain(cps), interval);
   // Spawn a few immediately
   for (let i = 0; i < Math.min(5, Math.ceil(cps / 10)); i++) {
