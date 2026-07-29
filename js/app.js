@@ -24,9 +24,31 @@ function openDB() {
 }
 
 async function hashPassword(pw) {
+  // PBKDF2 with random salt, 100k iterations
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+  const saltB64 = btoa(String.fromCharCode(...salt));
+  const hashB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+  return `pbkdf2:${saltB64}:${hashB64}`;
+}
+
+async function verifyPassword(pw, storedHash) {
+  if (storedHash && storedHash.startsWith('pbkdf2:')) {
+    const parts = storedHash.split(':');
+    if (parts.length !== 3) return false;
+    const salt = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
+    const expectedHash = parts[2];
+    const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+    const hashBuf = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+    const computedB64 = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+    return computedB64 === expectedHash;
+  }
+  // Legacy SHA-256 support (migration path)
   const enc = new TextEncoder().encode(pw);
   const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const legacyHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return legacyHash === storedHash;
 }
 
 async function getAccount(id) {
@@ -220,6 +242,7 @@ const state = {
   warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
   missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
   lastOfflineTime: Date.now(),
+  _lastCpsTick: Date.now(),
   currentView: 'landing'
 };
 
@@ -764,6 +787,15 @@ async function submitFeedback() {
     return;
   }
 
+  // Rate limit: 1 submission per 24 hours
+  const lastKey = state.currentUser ? `ck_feedback_last_${state.currentUser.id}` : 'ck_feedback_last_anon';
+  const lastTime = parseInt(localStorage.getItem(lastKey) || '0', 10);
+  if (Date.now() - lastTime < 86400000) {
+    const remaining = Math.ceil((86400000 - (Date.now() - lastTime)) / 3600000);
+    errEl.textContent = `⏳ 포상금은 24시간에 한 번만 지급됩니다. ${remaining}시간 후에 다시 시도해주세요.`;
+    return;
+  }
+
   const fbData = {
     category,
     content,
@@ -773,6 +805,7 @@ async function submitFeedback() {
   };
 
   await saveFeedback(fbData);
+  localStorage.setItem(lastKey, String(Date.now()));
 
   state.missionProgress.feedbackCount = (state.missionProgress.feedbackCount || 0) + 1;
   if (!state.unlockedTitles.includes('title_visionary')) {
@@ -788,279 +821,34 @@ async function submitFeedback() {
   notifyStateChange();
 }
 
-// ---------- 10. Admin Module ----------
-function handleAdminLogin() {
-  const pw = document.getElementById('adminPwInput').value;
-  const errEl = document.getElementById('adminLoginError');
-  errEl.textContent = '';
+// ---------- 10. Developer Tools Module (local only, no cloud sync) ----------
+function isDevMode() {
+  return localStorage.getItem('ck_dev_mode') === 'true';
+}
 
-  if (pw !== ADMIN_PASSWORD) {
-    errEl.textContent = '비밀번호가 올바르지 않습니다.';
-    return;
+function toggleDevMode() {
+  const current = isDevMode();
+  localStorage.setItem('ck_dev_mode', current ? 'false' : 'true');
+  if (!current) {
+    showToast('⚙️ 개발자 모드가 활성화되었습니다.');
+  } else {
+    showToast('⚙️ 개발자 모드가 비활성화되었습니다.');
   }
-
-  state.isAdmin = true;
-  const adminNavBtn = document.getElementById('adminNavBtn');
-  if (adminNavBtn) adminNavBtn.hidden = false;
-  renderAdminView();
-  showToast('⚙️ 관리자 대시보드에 접속했습니다.');
+  renderActiveView();
 }
 
 function renderAdminView() {
-  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin' || state.currentUser.id === 'lucaluca' || state.currentUser.nickname === 'lucaluca'));
+  const devMode = isDevMode();
   const loginForm = document.getElementById('adminLoginForm');
   const dashboard = document.getElementById('adminDashboardContent');
 
-  if (isAdminUser) {
-    state.isAdmin = true;
+  if (devMode) {
     if (loginForm) loginForm.hidden = true;
     if (dashboard) dashboard.hidden = false;
-    loadAdminFeedbacks();
     renderCloudStatus();
   } else {
     if (loginForm) loginForm.hidden = false;
     if (dashboard) dashboard.hidden = true;
-  }
-}
-
-async function loadAdminUsers() {
-  const listEl = document.getElementById('adminUserList');
-  if (!listEl) return;
-  listEl.innerHTML = '<div style="color: var(--parchment-dim); font-size: 13px;">유저 목록을 불러오는 중...</div>';
-
-  let users = [];
-
-  // Try fetching from Supabase leaderboard
-  if (typeof supabaseFetchLeaderboard === 'function') {
-    const cloudUsers = await supabaseFetchLeaderboard();
-    if (cloudUsers && cloudUsers.length > 0) {
-      users = cloudUsers;
-    }
-  }
-
-  // Merge local DB accounts
-  try {
-    const db = await openDB();
-    const tx = db.transaction('accounts', 'readonly');
-    const store = tx.objectStore('accounts');
-    const req = store.getAll();
-    req.onsuccess = () => {
-      const localUsers = req.result || [];
-      localUsers.forEach(lu => {
-        if (!users.some(u => u.id === lu.id)) {
-          users.push({
-            id: lu.id,
-            nickname: lu.nickname,
-            clicks: lu.clicks || 0,
-            battlePower: lu.battlePower || 0,
-            title: lu.equippedTitle || '영주'
-          });
-        }
-      });
-      renderAdminUsersList(listEl, users);
-    };
-    req.onerror = () => {
-      renderAdminUsersList(listEl, users);
-    };
-  } catch (e) {
-    renderAdminUsersList(listEl, users);
-  }
-}
-
-function renderAdminUsersList(container, users) {
-  if (!users || users.length === 0) {
-    container.innerHTML = '<div style="color: var(--parchment-dim); font-size: 13px;">등록된 유저가 없습니다.</div>';
-    return;
-  }
-
-  container.innerHTML = users.map(u => `
-    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <div style="font-size: 13px; font-weight: 700; color: var(--gold-bright);">${escapeHtml(u.nickname || u.id)} <span style="font-size: 11px; color: var(--parchment-dim);">(ID: ${escapeHtml(u.id)})</span></div>
-        <div style="font-size: 11px; color: var(--parchment-dim);">자금: ${(u.clicks || 0).toLocaleString()} | 전투력: ${(u.battlePower || 0).toLocaleString()}</div>
-      </div>
-      <button class="buy-btn" data-admin-select-user="${escapeHtml(u.id)}" style="font-size: 11px; padding: 4px 10px;">관리</button>
-    </div>
-  `).join('');
-
-  container.querySelectorAll('[data-admin-select-user]').forEach(btn => {
-    btn.onclick = () => {
-      const userId = btn.getAttribute('data-admin-select-user');
-      openAdminUserDetail(userId);
-    };
-  });
-}
-
-let currentAdminEditAccount = null;
-
-async function openAdminUserDetail(userId) {
-  const detailEl = document.getElementById('adminUserDetail');
-  const nameEl = document.getElementById('adminDetailName');
-  if (!detailEl || !nameEl) return;
-
-  const account = await loadPreferredAccount(userId);
-  if (!account) {
-    showToast('유저 정보를 불러올 수 없습니다.');
-    return;
-  }
-
-  currentAdminEditAccount = account;
-  nameEl.textContent = `${account.nickname} (${account.id})`;
-
-  const inputEl = document.getElementById('adminUserClickInput');
-  if (inputEl) inputEl.value = account.clicks || 0;
-
-  // Populate army buttons
-  const armyContainer = document.getElementById('adminUserArmyBtns');
-  if (armyContainer) {
-    armyContainer.innerHTML = ARMY_ITEMS.map(item => {
-      const count = (account.armies && account.armies[item.id]) || 0;
-      return `
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(0,0,0,0.3);border-radius:6px;padding:4px 8px;">
-          <span>${item.icon}</span>
-          <span style="font-size:11px;color:var(--parchment);">${item.name}</span>
-          <button class="mini-btn" data-admin-item="army" data-item-id="${item.id}" data-delta="-1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#ff8080;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
-          <span style="font-size:12px;min-width:20px;text-align:center;color:var(--gold-bright);" id="adminArmyCount_${item.id}">${count}</span>
-          <button class="mini-btn" data-admin-item="army" data-item-id="${item.id}" data-delta="1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#80ff80;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
-        </div>
-      `;
-    }).join('');
-    armyContainer.querySelectorAll('[data-admin-item="army"]').forEach(btn => {
-      btn.onclick = () => handleAdminItemChange('army', btn.dataset.itemId, parseInt(btn.dataset.delta));
-    });
-  }
-
-  // Populate relic buttons
-  const relicContainer = document.getElementById('adminUserRelicBtns');
-  if (relicContainer) {
-    relicContainer.innerHTML = MULTIPLIER_RELICS.map(r => {
-      const rawVal = account.relics && account.relics[r.id];
-      const count = typeof rawVal === 'number' ? rawVal : (rawVal ? 1 : 0);
-      return `
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(0,0,0,0.3);border-radius:6px;padding:4px 8px;">
-          <span>${r.icon}</span>
-          <span style="font-size:11px;color:var(--parchment);">${r.name}</span>
-          <button class="mini-btn" data-admin-item="relic" data-item-id="${r.id}" data-delta="-1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#ff8080;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
-          <span style="font-size:12px;min-width:20px;text-align:center;color:var(--gold-bright);" id="adminRelicCount_${r.id}">${count}</span>
-          <button class="mini-btn" data-admin-item="relic" data-item-id="${r.id}" data-delta="1" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(212,175,55,0.4);background:rgba(0,0,0,0.3);color:#80ff80;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
-        </div>
-      `;
-    }).join('');
-    relicContainer.querySelectorAll('[data-admin-item="relic"]').forEach(btn => {
-      btn.onclick = () => handleAdminItemChange('relic', btn.dataset.itemId, parseInt(btn.dataset.delta));
-    });
-  }
-
-  // Populate effect buttons
-  const effectContainer = document.getElementById('adminUserEffectBtns');
-  if (effectContainer) {
-    effectContainer.innerHTML = VISUAL_EFFECTS.map(eff => {
-      const owned = account.effects && account.effects.includes(eff.id);
-      return `
-        <button class="buy-btn" data-admin-effect="${eff.id}" style="font-size:11px;padding:4px 10px;${owned ? 'background:rgba(212,175,55,0.3);border-color:var(--gold);' : ''}">
-          ${eff.icon} ${eff.name} ${owned ? '✅' : '❌'}
-        </button>
-      `;
-    }).join('');
-    effectContainer.querySelectorAll('[data-admin-effect]').forEach(btn => {
-      btn.onclick = () => handleAdminEffectToggle(btn.dataset.adminEffect);
-    });
-  }
-
-  detailEl.hidden = false;
-}
-
-function handleAdminItemChange(type, itemId, delta) {
-  if (!currentAdminEditAccount) return;
-  if (type === 'army') {
-    if (!currentAdminEditAccount.armies) currentAdminEditAccount.armies = {};
-    const cur = currentAdminEditAccount.armies[itemId] || 0;
-    const next = Math.max(0, cur + delta);
-    currentAdminEditAccount.armies[itemId] = next;
-    const countEl = document.getElementById(`adminArmyCount_${itemId}`);
-    if (countEl) countEl.textContent = next;
-  } else if (type === 'relic') {
-    if (!currentAdminEditAccount.relics) currentAdminEditAccount.relics = {};
-    const raw = currentAdminEditAccount.relics[itemId];
-    const cur = typeof raw === 'number' ? raw : (raw ? 1 : 0);
-    const next = Math.max(0, cur + delta);
-    currentAdminEditAccount.relics[itemId] = next;
-    const countEl = document.getElementById(`adminRelicCount_${itemId}`);
-    if (countEl) countEl.textContent = next;
-  }
-}
-
-function handleAdminEffectToggle(effectId) {
-  if (!currentAdminEditAccount) return;
-  if (!currentAdminEditAccount.effects) currentAdminEditAccount.effects = [];
-  const idx = currentAdminEditAccount.effects.indexOf(effectId);
-  if (idx >= 0) {
-    currentAdminEditAccount.effects.splice(idx, 1);
-  } else {
-    currentAdminEditAccount.effects.push(effectId);
-  }
-  // Re-render effect buttons
-  const effectContainer = document.getElementById('adminUserEffectBtns');
-  if (effectContainer) {
-    effectContainer.innerHTML = VISUAL_EFFECTS.map(eff => {
-      const owned = currentAdminEditAccount.effects.includes(eff.id);
-      return `
-        <button class="buy-btn" data-admin-effect="${eff.id}" style="font-size:11px;padding:4px 10px;${owned ? 'background:rgba(212,175,55,0.3);border-color:var(--gold);' : ''}">
-          ${eff.icon} ${eff.name} ${owned ? '✅' : '❌'}
-        </button>
-      `;
-    }).join('');
-    effectContainer.querySelectorAll('[data-admin-effect]').forEach(btn => {
-      btn.onclick = () => handleAdminEffectToggle(btn.dataset.adminEffect);
-    });
-  }
-}
-
-function handleAdminUserSetClick() {
-  if (!currentAdminEditAccount) {
-    showToast('먼저 유저를 선택해주세요.');
-    return;
-  }
-  const inputEl = document.getElementById('adminUserClickInput');
-  if (!inputEl || inputEl.value === '' || isNaN(inputEl.value)) {
-    showToast('클릭 수를 숫자로 입력해주세요.');
-    return;
-  }
-  currentAdminEditAccount.clicks = String(Math.max(0, Math.floor(parseInt(inputEl.value, 10))));
-  showToast(`클릭 수를 ${currentAdminEditAccount.clicks}으로 설정했습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
-}
-
-function handleAdminUserGive(amount) {
-  if (!currentAdminEditAccount) {
-    showToast('먼저 유저를 선택해주세요.');
-    return;
-  }
-  currentAdminEditAccount.clicks = bigAdd(currentAdminEditAccount.clicks || "0", String(amount));
-  const inputEl = document.getElementById('adminUserClickInput');
-  if (inputEl) inputEl.value = currentAdminEditAccount.clicks;
-  showToast(`+${amount.toLocaleString()} 클릭 지급되었습니다. (저장하려면 아래 저장 버튼을 눌러주세요)`);
-}
-
-async function handleAdminUserSave() {
-  if (!currentAdminEditAccount) {
-    showToast('저장할 유저가 없습니다.');
-    return;
-  }
-  const acc = currentAdminEditAccount;
-  acc.updatedAt = Date.now();
-  await setAccount(acc);
-  if (typeof supabaseSyncAccount === 'function') {
-    const ok = await supabaseSyncAccount(acc);
-    if (ok) {
-      clearPendingSync();
-      showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB + Supabase에 저장되었습니다.`);
-    } else {
-      const retryable = (typeof getCloudSyncState === 'function') ? getCloudSyncState().lastErrorRetryable : true;
-      savePendingSync(acc, retryable);
-      showToast(`💾 ${acc.nickname}님의 데이터를 로컬에 저장했지만 클라우드 동기화에 실패했습니다.${retryable ? ' 자동 재시도 중...' : ' (영구 오류, 재시도하지 않음)'}`);
-    }
-  } else {
-    showToast(`💾 ${acc.nickname}님의 데이터가 IndexedDB에 저장되었습니다.`);
   }
 }
 
@@ -1102,28 +890,6 @@ function unlockAllForAdmin() {
   recalculateMultipliers();
   notifyStateChange();
   showToast('⚙️ [관리자] 모든 군대, 보구, 오프라인 행정관, 이펙트 및 칭호 전체 해금 완료!');
-}
-
-async function loadAdminFeedbacks() {
-  const listEl = document.getElementById('adminFeedbackList');
-  if (!listEl) return;
-  listEl.innerHTML = '불러오는 중...';
-
-  const feedbacks = await getFeedbacks();
-  if (feedbacks.length === 0) {
-    listEl.innerHTML = '<div style="color: var(--parchment-dim); font-size: 13px;">제출된 버그 제보가 없습니다.</div>';
-    return;
-  }
-
-  listEl.innerHTML = feedbacks.map(f => `
-    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px;">
-      <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--gold-bright); margin-bottom: 4px;">
-        <span>[${escapeHtml(f.category)}] ${escapeHtml(f.author)}</span>
-        <span>${new Date(f.createdAt).toLocaleDateString()}</span>
-      </div>
-      <div style="font-size: 13px; color: var(--parchment); white-space: pre-wrap;">${escapeHtml(f.content)}</div>
-    </div>
-  `).join('');
 }
 
 // ---------- 11. UI & View Controller Module ----------
@@ -1176,10 +942,9 @@ function renderActiveView() {
   const clicks = getClicks();
   const tier = getTierInfo(clicks);
 
-  const isAdminUser = state.isAdmin || (state.currentUser && (state.currentUser.id === 'admin' || state.currentUser.nickname === 'admin' || state.currentUser.id === 'lucaluca' || state.currentUser.nickname === 'lucaluca'));
   const adminNavBtn = document.getElementById('adminNavBtn');
   if (adminNavBtn) {
-    adminNavBtn.hidden = !isAdminUser;
+    adminNavBtn.hidden = !isDevMode();
   }
 
   const userChip = document.getElementById('userChip');
@@ -1381,18 +1146,14 @@ function renderProfileView() {
     profileLogoutBtn.onclick = handleLogout;
   }
 
-  // Admin section — shown only for jay0216
-  const isJay = state.currentUser && (state.currentUser.nickname === 'jay0216' || state.currentUser.id === 'jay0216');
+  // Admin section — shown when dev mode is active
   const profileAdminSection = document.getElementById('profileAdminSection');
   if (profileAdminSection) {
-    if (isJay) {
+    if (isDevMode()) {
       profileAdminSection.hidden = false;
       const goAdminBtn = document.getElementById('profileGoAdminBtn');
       if (goAdminBtn) {
         goAdminBtn.onclick = () => {
-          state.isAdmin = true;
-          const adminNavBtn = document.getElementById('adminNavBtn');
-          if (adminNavBtn) adminNavBtn.hidden = false;
           switchView('admin');
         };
       }
@@ -1922,16 +1683,21 @@ function formatTimeDuration(seconds) {
   if (m > 0) return `${m}분 ${s}초`;
   return `${s}초`;
 }
+const MAX_OFFLINE_SEC = 86400; // 최대 24시간만 보상
 
 function checkOfflineHarvest(lastTime) {
   if (!lastTime) return;
   const now = Date.now();
-  const elapsedSec = Math.floor((now - lastTime) / 1000);
-  state.lastOfflineTime = now;
+  let elapsedSec = Math.floor((now - lastTime) / 1000);
+  if (elapsedSec < 0) elapsedSec = 0; // 시스템 시계 되돌림 방어
+  const cappedSec = Math.min(elapsedSec, MAX_OFFLINE_SEC);
 
-  if (elapsedSec >= 5 && (state.cps > 0 || state.offlineCps > 0)) {
-    const effectiveRate = state.offlineCps > 0 ? state.offlineCps : Math.max(1, Math.floor(state.cps * 0.5));
-    const reward = elapsedSec * effectiveRate;
+  if (cappedSec >= 5) {
+    const effectiveRate = state.offlineCps > 0 ? state.offlineCps : Math.floor(state.cps * 0.5);
+    if (effectiveRate <= 0) return; // 수확률 0이면 보상 없음
+    const reward = cappedSec * effectiveRate;
+    state.lastOfflineTime = now;
+
     addClicks(reward);
 
     const timeEl = document.getElementById('offlineTimeDisplay');
@@ -1939,7 +1705,7 @@ function checkOfflineHarvest(lastTime) {
     const rateEl = document.getElementById('offlineCpsRateDisplay');
 
     if (timeEl && earnedEl && rateEl) {
-      timeEl.textContent = formatTimeDuration(elapsedSec);
+      timeEl.textContent = formatTimeDuration(elapsedSec) + (elapsedSec > MAX_OFFLINE_SEC ? ' (최대 적용)' : '');
       earnedEl.textContent = `+${formatNumber(reward)} 클릭`;
       rateEl.textContent = `(백그라운드 수확 속도: +${formatNumber(effectiveRate)} /초)`;
       openModal('offlineHarvestModal');
@@ -2123,8 +1889,14 @@ async function handleLogin() {
   const account = await loadPreferredAccount(id);
   if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
-  const hash = await hashPassword(pw);
-  if (hash !== account.passwordHash) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+  const valid = await verifyPassword(pw, account.passwordHash);
+  if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+
+  // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
+  if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
+    account.passwordHash = await hashPassword(pw);
+    await setAccount(account);
+  }
 
   if (applyEmergencySnapshot(account)) {
     await setAccount(account);
@@ -2441,24 +2213,14 @@ function setupEventListeners() {
   document.getElementById('feedbackSubmitBtn').onclick = submitFeedback;
   document.getElementById('feedbackModalClose').onclick = () => closeModal('feedbackModal');
 
-  // Admin View & Direct Custom Click Count Set
-  document.getElementById('adminLoginSubmit').onclick = handleAdminLogin;
+  // Developer Tools - self-only debug functions (no cloud sync)
+  document.getElementById('adminLoginSubmit').onclick = () => {
+    toggleDevMode();
+  };
   document.getElementById('adminSetClickBtn').onclick = handleAdminCustomClickSet;
   document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
   document.getElementById('adminCheat10M').onclick = () => giveAdminGold(10000000);
   document.getElementById('adminUnlockAll').onclick = unlockAllForAdmin;
-  const adminLoadUsersBtn = document.getElementById('adminLoadUsers');
-  if (adminLoadUsersBtn) adminLoadUsersBtn.onclick = loadAdminUsers;
-
-  const adminUserSetClickBtn = document.getElementById('adminUserSetClick');
-  if (adminUserSetClickBtn) adminUserSetClickBtn.onclick = handleAdminUserSetClick;
-
-  const adminUserSaveBtn = document.getElementById('adminUserSave');
-  if (adminUserSaveBtn) adminUserSaveBtn.onclick = handleAdminUserSave;
-
-  document.querySelectorAll('.admin-user-give').forEach(btn => {
-    btn.onclick = () => handleAdminUserGive(parseInt(btn.dataset.amt, 10));
-  });
 
   // Offline Harvest Claim Button
   const offlineClaimBtn = document.getElementById('offlineClaimBtn');
@@ -2575,8 +2337,8 @@ async function init() {
   setInterval(() => {
     if (state.cps > 0) {
       addClicks(state.cps);
+      state._lastCpsTick = Date.now();
       if (state.currentUser) {
-        state.lastOfflineTime = Date.now();
         const now = Date.now();
         if (now - lastCpsSaveAt >= 5000) {
           lastCpsSaveAt = now;

@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://ufisfakmsaiicetlzjal.supabase.co; img-src 'self' data:;">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta http-equiv="Referrer-Policy" content="no-referrer-when-downgrade">
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), interest-cohort=()">
 <title>Clicker Kingdom - 위대한 제국의 건국</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -271,16 +275,14 @@
 
       <div class="admin-card">
         <div id="adminLoginForm">
-          <div class="field">
-            <label for="adminPwInput">관리자 비밀번호</label>
-            <input id="adminPwInput" type="password" placeholder="비밀번호 입력 (기본: admin)">
+          <div style="text-align: center; padding: 20px;">
+            <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 10px;">⚙️ 개발자 도구는 로컬 전용입니다. 클라우드 동기화되지 않습니다.</p>
+            <button class="buy-btn" id="adminLoginSubmit" style="padding: 10px 24px;">🛠️ 개발자 모드 활성화</button>
           </div>
-          <p id="adminLoginError" style="color: #ff9d9d; font-size: 12px;"></p>
-          <button class="buy-btn" id="adminLoginSubmit" style="width: 100%; padding: 10px;">관리자 접속</button>
         </div>
 
         <div id="adminDashboardContent" hidden>
-          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 16px;">클릭 수 수동 직접 조절 및 치트 패널</p>
+          <p style="font-size: 13px; color: var(--parchment-dim); margin-bottom: 16px;">🔒 로컬 전용 개발자 도구 — 클라우드 랭킹에 영향을 주지 않습니다.</p>
           
           <div class="field">
             <label for="adminCustomClickInput">내 클릭 수 직접 설정 (수동 입력)</label>
@@ -307,57 +309,6 @@
             <p class="cloud-status-detail" id="cloudStatusDetail">로그인, 저장, 친구 대전 룸 생성 중에 생긴 클라우드 오류도 여기에 표시돼.</p>
             <div class="cloud-status-diagnostic" id="cloudStatusDiagnostic">진단 기록 없음</div>
           </div>
-
-          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-            <button class="buy-btn" id="adminTestConnection">연결 테스트</button>
-            <button class="buy-btn" id="adminMigrateAccounts">IndexedDB → Supabase 마이그레이션</button>
-          </div>
-
-          <h4 style="color: var(--gold-bright); margin: 20px 0 8px;">👤 유저 관리</h4>
-          <button class="buy-btn" id="adminLoadUsers" style="margin-bottom: 10px;">유저 목록 새로고침</button>
-          <div id="adminUserList" style="max-height: 300px; overflow-y: auto; margin-bottom: 12px;"></div>
-
-          <div id="adminUserDetail" hidden>
-            <h4 style="color: var(--gold-bright); margin: 12px 0 8px;">✏️ 유저 상세: <span id="adminDetailName"></span></h4>
-
-            <div class="field">
-              <label>클릭 수 조절</label>
-              <div style="display: flex; gap: 8px;">
-                <input type="number" id="adminUserClickInput" placeholder="새 클릭 수">
-                <button class="buy-btn" id="adminUserSetClick" style="white-space: nowrap;">설정</button>
-              </div>
-            </div>
-
-            <div class="field">
-              <label>자금 지급</label>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="buy-btn admin-user-give" data-amt="10000">+10K</button>
-                <button class="buy-btn admin-user-give" data-amt="100000">+100K</button>
-                <button class="buy-btn admin-user-give" data-amt="1000000">+1M</button>
-                <button class="buy-btn admin-user-give" data-amt="10000000">+10M</button>
-              </div>
-            </div>
-
-            <div class="field">
-              <label>군대 지급</label>
-              <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserArmyBtns"></div>
-            </div>
-
-            <div class="field">
-              <label>보구 지급</label>
-              <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserRelicBtns"></div>
-            </div>
-
-            <div class="field">
-              <label>이펙트 지급</label>
-              <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="adminUserEffectBtns"></div>
-            </div>
-
-            <button class="buy-btn" id="adminUserSave" style="width: 100%; margin-top: 8px;">💾 변경사항 저장</button>
-          </div>
-
-          <h4 style="color: var(--gold-bright); margin: 20px 0 8px;">📬 유저 제보 내역:</h4>
-          <div id="adminFeedbackList" style="max-height: 200px; overflow-y: auto;"></div>
         </div>
       </div>
     </section>

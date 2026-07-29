@@ -1,9 +1,21 @@
 // ============================================================================
 // Clicker Kingdom - Supabase Cloud Synchronization Helper
 // ============================================================================
+// SECURITY NOTE:
+// - password_hash is NEVER sent to or read from Supabase (auth stays local in IndexedDB).
+//   See app.js hashPassword() for client-side PBKDF2 hashing.
+// - The accounts table MUST have RLS policies:
+//   - anon: SELECT only (no INSERT/UPDATE/DELETE)
+//   - service_role: full CRUD (for future server-side admin)
+//   - Apply: ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+//     CREATE POLICY "anon_read_only" ON accounts FOR SELECT TO anon USING (true);
+//   - leaderboard and rooms tables should also use RLS:
+//     CREATE POLICY "anon_read_write" ON leaderboard FOR ALL TO anon USING (true);
+//     CREATE POLICY "anon_read_write" ON rooms FOR ALL TO anon USING (true);
+// ============================================================================
 
-const SUPABASE_URL = "https://ufisfakmsaiicetlzjal.supabase.co"; // Default fallback / placeholder URL
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmaXNmYWttc2FpaWNldGx6amFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzQyMzEsImV4cCI6MjEwMDc1MDIzMX0.J9SYa4O5CxekBezv_HP4gGiF0OtjVj1WZjXlR8O2mbI"; // Default fallback key
+const SUPABASE_URL = "https://ufisfakmsaiicetlzjal.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmaXNmYWttc2FpaWNldGx6amFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzQyMzEsImV4cCI6MjEwMDc1MDIzMX0.J9SYa4O5CxekBezv_HP4gGiF0OtjVj1WZjXlR8O2mbI";
 
 let supabaseClient = null;
 const cloudSyncState = {
@@ -188,7 +200,6 @@ async function supabaseSyncAccount(account) {
       .upsert({
         id: account.id,
         nickname: account.nickname,
-***REMOVED***
         clicks: account.clicks || "0",
         armies: account.armies || {},
         relics: account.relics || {},
@@ -340,7 +351,6 @@ async function supabaseFetchAccount(id) {
     return {
       id: data.id,
       nickname: data.nickname,
-***REMOVED***
       avatar: data.avatar || '👑',
       clicks: String(data.clicks || 0),
       armies: data.armies || {},
