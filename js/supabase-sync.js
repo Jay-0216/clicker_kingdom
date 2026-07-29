@@ -189,7 +189,6 @@ async function supabaseSyncAccount(account) {
         id: account.id,
         nickname: account.nickname,
 ***REMOVED***
-        avatar: account.avatar || '👑',
         clicks: account.clicks || "0",
         armies: account.armies || {},
         relics: account.relics || {},
@@ -252,6 +251,11 @@ async function supabaseSyncAccount(account) {
       detail: `${account.nickname || account.id} 계정과 랭킹 데이터를 Supabase에 반영했어.`,
       lastSyncAt: Date.now()
     });
+
+    // Try to sync avatar separately (column may not exist yet)
+    try {
+      await client.from('accounts').update({ avatar: account.avatar || '👑' }).eq('id', account.id);
+    } catch (_) {}
 
     return true;
   } catch (err) {
