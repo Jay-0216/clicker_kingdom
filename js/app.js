@@ -611,13 +611,12 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
       battleTimeLeft--;
       document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
-// [PATCH] AI 난이도는 내 승률 기반으로 조정. 많이 이기면 점점 세지고,
-      // 많이 지면 약해짐. 연전 기록이 없는 초반엔 기본값(0.5)으로 시작.
-      // 승률: wins / max(totalBattles, 1)
+      // [PATCH] AI 난이도는 내 승률 기반으로 조정. 많이 이기면 점점 세지고,
+      // 많이 지면 약해짐. 연전 기록이 없는 초반엔 기본값으로 시작.
       const total = Math.max(state.warRecords.totalBattles || 0, 1);
       const wins = state.warRecords.wins || 0;
       const winRate = wins / total;
-      const aiPower = 0.3 + winRate * 0.9; // 승률 0%→AI 0.3x, 승률 100%→AI 1.2x
+      const aiPower = 0.3 + winRate * 0.9;
       const simulatedTapRate = Math.floor(4 + Math.random() * 4 + aiPower * 2.5);
       enemyClicksInBattle += simulatedTapRate;
 
@@ -2205,7 +2204,7 @@ async function handleSignup() {
   if (id.length < 3) { errEl.textContent = '아이디는 3자 이상으로 입력해 주세요.'; return; }
   if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
-  // [PATCH] admin 페이지는 닉네임이 예약 닉아듐인 계정에만 자동으로 열리는데,
+  // [PATCH] admin 페이지는 닉네임이 jay0216인 계정에만 자동으로 열리는데,
   // 닉네임 중복 검사가 없어서 아무나 이 닉네임으로 가입하면 admin 권한을
   // 가질 수 있었음. 예약 닉네임으로 막아서 다른 사람이 사용하지 못하게 함.
   if (ADMIN_NICKNAMES.includes(nickname)) {

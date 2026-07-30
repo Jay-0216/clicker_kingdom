@@ -71,10 +71,6 @@ function updateCloudSyncState(patch) {
 }
 
 function reportCloudErrorToAdmin(patch) {
-  if (typeof window.reportCloudErrorToAdmin === 'function') {
-    window.reportCloudErrorToAdmin(patch);
-    return;
-  }
   try {
     const errors = JSON.parse(localStorage.getItem('ck_cloud_error_log') || '[]');
     errors.push({

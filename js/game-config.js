@@ -5,7 +5,7 @@
 // ============================================================================
 
 // ---------- 숫자 단축 표기 ----------
-// K(1e3) → M → B → T → aa(1e15) → ht(1e18, 핵타) → zz … → ∞(1e100+)
+// K(1e3) → M → B → T → aa(1e15) → TK(1e18, 핵타) → zz … → ∞(1e100+)
 function buildNumberUnits() {
   const units = [{ value: 1e100, suffix: '∞' }];
 
@@ -62,7 +62,7 @@ function formatNumber(n, decimals = 2) {
   }
   if (!isFinite(n) || isNaN(n)) return '∞';
   if (n < 0) return '-' + formatNumber(-n, decimals);
-  if (n >= 1e60) return '∞';
+  if (n >= 1e100) return '∞';
 
   for (const { value, suffix } of SORTED_UNITS) {
     if (n >= value) {
@@ -107,7 +107,7 @@ function formatNumberFull(n) {
 //   5 → 천상 제국:      1e20
 //   6 → 신의 영역:      1e30
 //   7 → 초월의 왕국:    1e50
-//   8 → 무한의 영역:    1e100 ← 최종 목표
+//   8 → 무한의 영역:    1e100 ← 최→ 목표
 const KINGDOM_TIERS = [
   {
     clicks: 0,
@@ -184,7 +184,6 @@ const KINGDOM_TIERS = [
 ];
 
 // 이 값을 초과하면 beyondMax (신 칭호 해금, 글리치 효과)
-// 무한의 영역(1e100)을 넘으려면 1e200까지 가야 하므로 충분히 간격 둠
 const MAX_TIER_CLICKS = 1e200;
 
 
