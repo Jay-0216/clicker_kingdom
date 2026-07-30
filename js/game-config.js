@@ -468,6 +468,26 @@ function toBig(val) {
   if (typeof val === 'number' && isFinite(val) && val <= Number.MAX_SAFE_INTEGER) return BigInt(Math.floor(val));
   return BigInt(0);
 }
+
+// [PATCH] addClicks 등에서 amount로 들어오는 값이 Number(부동소수점), 문자열,
+// BigInt 등 뭐가 오든 안전하게 정수 문자열로 바꿔주는 헬퍼.
+// Number가 Number.MAX_SAFE_INTEGER를 넘거나 Infinity/NaN이면(CPS가 극단적으로
+// 커진 경우 등) 그대로 두면 오차나 손실이 생기므로, 그런 경우엔 문자열로
+// 이미 들어온 값을 우선 신뢰하거나 안전한 최대치로 클램프한다.
+function bigSafeAmount(amount) {
+  if (typeof amount === 'string' && /^-?\d+$/.test(amount)) return amount;
+  if (typeof amount === 'bigint') return amount.toString();
+  if (typeof amount === 'number') {
+    if (!isFinite(amount) || isNaN(amount)) return '0';
+    if (amount > Number.MAX_SAFE_INTEGER) {
+      // 부동소수점으로 넘어온 시점에 이미 정밀도가 깨졌을 수 있으므로,
+      // 최소한 안전한 정수 범위로 클램프해서 Infinity/NaN 저장을 막는다.
+      return String(Number.MAX_SAFE_INTEGER);
+    }
+    return String(Math.floor(amount));
+  }
+  return '0';
+}
 function bigGte(a, b) { return toBig(a) >= toBig(b); }
 function bigGt(a, b) { return toBig(a) > toBig(b); }
 function bigLt(a, b) { return toBig(a) < toBig(b); }
@@ -479,4 +499,16 @@ function bigDiv(a, b) { return (toBig(a) / toBig(b)).toString(); }
 function bigMax(a, b) { return bigGte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
 function bigMin(a, b) { return bigLte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
 function bigPow10AsString(exp) { return '1' + '0'.repeat(exp); }
+
+// [PATCH] 아이템 가격 계산: 기존엔 10^(count^2)로 지수가 count의 "제곱"으로
+// 커져서(예: 5번째 구매 시 10^25배) 몇 번만 사도 사실상 구매가 불가능해지는
+// 문제가 있었음. baseCost * 2^count 로 교체 (완만한 지수 증가).
+// BigInt 거듭제곱(2n ** BigInt(count))은 부동소수점 오차 없이 완전한 정수로
+// 계산되므로, count가 아무리 커져도(수백~수천) 정밀도 손실이 없다.
+function bigGrowthCost(baseCost, count, rate = 2) {
+  if (count <= 0) return toBig(baseCost).toString();
+  const growth = BigInt(rate) ** BigInt(count); // 2^count
+  const cost = toBig(baseCost) * growth;
+  return bigMax(cost.toString(), baseCost);
+}
 

@@ -611,16 +611,12 @@ textarea:focus-visible {
 }
 .emoji-drop {
   position: absolute;
-  top: -30px;
+  top: 0;
+  left: 0;
   pointer-events: none;
   font-size: 20px;
-  animation: emojiFall linear forwards;
   opacity: 0.6;
-}
-@keyframes emojiFall {
-  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.6; }
-  80% { opacity: 0.3; }
-  100% { transform: translateY(var(--fall-distance, 600px)) translateX(var(--drift, 30px)) rotate(var(--spin, 360deg)); opacity: 0; }
+  will-change: transform, opacity;
 }
 
 /* Floating Particles */

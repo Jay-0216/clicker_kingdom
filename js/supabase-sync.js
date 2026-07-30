@@ -289,11 +289,15 @@ async function supabaseFetchLeaderboard() {
   if (!client) return null;
 
   try {
+    // [PATCH] clicks가 text 컬럼(오버플로우 방지를 위해 BigInt 문자열로 저장)이라
+    // DB의 .order('clicks')는 문자열 사전순 정렬이 되어버림 — 예를 들어
+    // "9999"가 "10000000"보다 크다고 정렬돼서 랭킹이 완전히 틀어질 수 있음.
+    // 넉넉히(500명) 가져온 뒤 클라이언트에서 BigInt 기준으로 정확히 정렬하고
+    // 상위 50명만 반환.
     const { data, error } = await client
       .from('leaderboard')
       .select('*')
-      .order('clicks', { ascending: false })
-      .limit(50);
+      .limit(500);
 
     if (error || !data) {
       if (error) {
@@ -308,15 +312,25 @@ async function supabaseFetchLeaderboard() {
       return null;
     }
 
-    return data.map(item => ({
+    const mapped = data.map(item => ({
       id: item.id,
       nickname: item.nickname,
-      clicks: item.clicks || 0,
+      clicks: String(item.clicks || 0),
       battlePower: item.battle_power || 0,
       wins: item.wins || 0,
       title: item.title || '성주',
       lastOnline: item.last_online || null
     }));
+
+    // BigInt 비교로 정렬 (숫자가 아무리 커도 정확함)
+    mapped.sort((a, b) => {
+      const av = BigInt(/^\d+$/.test(a.clicks) ? a.clicks : '0');
+      const bv = BigInt(/^\d+$/.test(b.clicks) ? b.clicks : '0');
+      if (av === bv) return 0;
+      return av > bv ? -1 : 1;
+    });
+
+    return mapped.slice(0, 50);
   } catch (err) {
     console.warn("Supabase leaderboard fetch exception:", err);
     return null;
@@ -390,6 +404,7 @@ async function supabaseCreateRoom(code, hostData) {
         guest_nickname: null,
         host_taps: 0,
         guest_taps: 0,
+        battle_start_at: null, // [PATCH] 새 룸 생성 시 시작 시각 초기화
         created_at: new Date().toISOString()
       }, { onConflict: 'code' });
 
@@ -430,12 +445,18 @@ async function supabaseJoinRoom(code, guestData) {
   if (!client) return false;
 
   try {
+    // [PATCH] status를 'matched'로만 바꾸고 끝나면, 게스트는 여기서 바로
+    // 배틀을 시작해버리고 호스트는 최대 2초 뒤 폴링으로 감지 후 시작해서
+    // 서로 다른 시점에 배틀이 끝나는 문제가 있었음.
+    // -> host가 matched를 감지한 뒤 battle_start_at(서버 타임스탬프)을 기록하고,
+    //    host/guest 둘 다 그 타임스탬프를 기준으로 같은 시각에 시작하도록 바꿈.
     const { error } = await client
       .from('rooms')
       .update({
         guest_id: guestData.id,
         guest_nickname: guestData.nickname,
-        status: 'matched'
+        status: 'matched',
+        battle_start_at: null // 새 매칭이므로 이전 대전의 시작 시각 초기화
       })
       .eq('code', String(code));
 
@@ -482,11 +503,60 @@ async function supabaseFetchRoom(code) {
       guestId: data.guest_id,
       guestNickname: data.guest_nickname,
       hostTaps: data.host_taps || 0,
-      guestTaps: data.guest_taps || 0
+      guestTaps: data.guest_taps || 0,
+      // 배틀이 실제로 시작된 서버 타임스탬프. 호스트/게스트가 같은 시각을
+      // 기준으로 타이머를 돌리기 위한 동기화 신호로 사용됨.
+      battleStartAt: data.battle_start_at ? new Date(data.battle_start_at).getTime() : null
     };
   } catch (err) {
     console.warn('supabaseFetchRoom exception:', err);
     return null;
+  }
+}
+
+// 호스트가 게스트 매칭을 확인한 시점에 호출. 배틀 시작 시각을 서버에 기록해서
+// 게스트도 같은 시각을 기준으로 타이머를 시작하도록 동기화 신호를 보냄.
+// [PATCH] .is('battle_start_at', null) 조건을 둬서, 혹시 실수로 두 번 호출돼도
+// 이미 정해진 시작 시각이 덮어써지지 않도록 함(덮어써지면 호스트/게스트가
+// 서로 다른 시각을 기준으로 타이머를 돌리게 되어 다시 어긋날 수 있었음).
+async function supabaseStartBattle(code) {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const startAt = new Date().toISOString();
+    const { data, error } = await client
+      .from('rooms')
+      .update({ status: 'battling', battle_start_at: startAt })
+      .eq('code', String(code))
+      .is('battle_start_at', null)
+      .select('battle_start_at')
+      .single();
+
+    if (error || !data) {
+      // 이미 다른 호출이 먼저 세팅했을 수 있으니 현재 값을 읽어서 반환
+      const room = await supabaseFetchRoom(code);
+      return room ? new Date(room.battleStartAt).toISOString() : null;
+    }
+    return data.battle_start_at;
+  } catch (err) {
+    console.warn('supabaseStartBattle exception:', err);
+    return null;
+  }
+}
+
+// [PATCH] 배틀 종료 후 room row 삭제. 다음에 같은 코드로 새 방을 만들 때
+// (createRoom이 upsert이긴 하지만) 이전 게스트/타임스탬프가 남지 않도록 정리.
+async function supabaseCleanupRoom(code) {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    await client.from('rooms').delete().eq('code', String(code));
+    return true;
+  } catch (err) {
+    console.warn('supabaseCleanupRoom exception:', err);
+    return false;
   }
 }
 

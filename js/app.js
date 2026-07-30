@@ -288,13 +288,28 @@ function setClicksDirectly(amount) {
 }
 
 function addClicks(amount) {
-  const added = bigAdd(getClicks(), Math.floor(amount));
+  // [PATCH] 기존엔 Math.floor(amount)로 Number 변환을 거쳐서, amount(예: state.cps
+  // 총합)가 Number.MAX_SAFE_INTEGER(약 9,007조)를 넘으면 부동소수점 정밀도가
+  // 깨지거나 심하면 Infinity가 될 수 있었음(BigInt 문자열로 저장되는 클릭 수
+  // 자체는 안전한데, 더하는 값 쪽이 구멍이었음).
+  // -> bigSafeAmount로 amount를 안전한 정수 문자열로 변환한 뒤 BigInt 덧셈만 사용.
+  const safeAmount = bigSafeAmount(amount);
+  const added = bigAdd(getClicks(), safeAmount);
   if (state.currentUser) {
     state.currentUser.clicks = added;
   } else {
     state.localClicks = added;
   }
-  state.missionProgress.clickCount += amount;
+  // missionProgress.clickCount는 "N번 클릭하기" 같은 미션 달성 판정에만 쓰이는
+  // 보조 카운터라 실제 클릭 수(BigInt)와 달리 무한히 커질 필요가 없음.
+  // amount가 아주 커져도(CPS 폭증 등) Number.MAX_SAFE_INTEGER를 넘지 않도록
+  // safeAmount를 Number로 변환할 때 상한을 씌워서 더함 (미션 판정 정확도에는
+  // 영향 없음 — 어차피 target은 훨씬 작은 값).
+  const missionSafeAdd = Math.min(Number(safeAmount) || 0, Number.MAX_SAFE_INTEGER);
+  state.missionProgress.clickCount = Math.min(
+    (state.missionProgress.clickCount || 0) + missionSafeAdd,
+    Number.MAX_SAFE_INTEGER
+  );
   notifyStateChange();
 }
 
@@ -312,9 +327,16 @@ function spendClicks(amount) {
 }
 
 // ---------- 4. Upgrades & Relics & Effects & Offline CPS ----------
+// 가격 상승률: 구매 1회당 15% 복리 증가 (표준 클리커 게임 방식)
+// 예전 방식은 10^(count^2)이라 5개째부터 10^25배로 폭증해 사실상 구매 불가능했음.
+// [PATCH] 기존엔 10^(count^2)로 가격이 폭증(count=5만 돼도 10^25배)해서
+// 몇 번 사면 사실상 구매 불가능해지는 문제가 있었음.
+// -> 표준 클리커 게임 방식인 baseCost * growthRate^count로 교체.
+// [PATCH] 2^count 배수 성장으로 교체 (BigInt 거듭제곱이라 오차 없이 정확)
+const ARMY_PRICE_GROWTH = 2;
+
 function getArmyCost(item, count) {
-  const pow10 = bigPow10AsString(count * count);
-  return bigMul(String(item.baseCost), pow10);
+  return bigGrowthCost(item.baseCost, count, ARMY_PRICE_GROWTH);
 }
 
 function buyArmy(itemId) {
@@ -353,9 +375,9 @@ function buyOfflineArmy(itemId) {
   }
 }
 
+// [PATCH] getArmyCost와 동일하게 2^count 배수 성장으로 교체
 function getRelicCost(relic, count) {
-  const pow10 = bigPow10AsString(count * count);
-  return bigMul(String(relic.cost), pow10);
+  return bigGrowthCost(relic.cost, count, 2);
 }
 
 function buyRelic(relicId) {
@@ -410,14 +432,17 @@ function recalculateCPS() {
     const count = state.armies[item.id] || 0;
     totalCps += item.cps * count;
   });
-  state.cps = totalCps;
+  // [PATCH] 아이템을 아주 많이 보유하면 totalCps가 이론상 매우 커질 수 있는데,
+  // 이후 addClicks(state.cps) 등에서 Number 오버플로우(Infinity/정밀도 손실)로
+  // 이어지지 않도록 안전한 정수 범위로 클램프.
+  state.cps = Math.min(totalCps, Number.MAX_SAFE_INTEGER);
 
   let totalOfflineCps = 0;
   OFFLINE_CPS_ITEMS.forEach(item => {
     const count = state.offlineArmies[item.id] || 0;
     totalOfflineCps += item.offlineCps * count;
   });
-  state.offlineCps = totalOfflineCps;
+  state.offlineCps = Math.min(totalOfflineCps, Number.MAX_SAFE_INTEGER);
 
   if (state.currentView === 'clicker') startEmojiRain(state.cps);
 
@@ -443,14 +468,16 @@ function recalculateMultipliers() {
 
 // ---------- 5. Empire Tier & Titles ----------
 function getTierInfo(clicks) {
+  // [PATCH] clicks가 BigInt 문자열(매우 큰 수)일 수 있어서, 일반 >= 비교는
+  // Number로 강제 변환되며 정밀도가 깨질 수 있음. bigGte로 안전하게 비교.
   let active = KINGDOM_TIERS[0];
   for (let i = KINGDOM_TIERS.length - 1; i >= 0; i--) {
-    if (clicks >= KINGDOM_TIERS[i].clicks) {
+    if (bigGte(clicks, KINGDOM_TIERS[i].clicks)) {
       active = KINGDOM_TIERS[i];
       break;
     }
   }
-  if (clicks >= MAX_TIER_CLICKS) {
+  if (bigGte(clicks, MAX_TIER_CLICKS)) {
     active = { ...active, beyondMax: true };
   }
   return active;
@@ -459,9 +486,14 @@ function getTierInfo(clicks) {
 function calcBattlePower() {
   const clicks = getClicks();
   const cpsPower = state.cps * 5;
-  const clickPower = Number(bigDiv(clicks, "5"));
+  // [PATCH] clicks가 아주 큰 BigInt 문자열이면 bigDiv 결과도 커서 Number()
+  // 변환 시 Infinity가 될 수 있음. Number.MAX_SAFE_INTEGER로 클램프.
+  const clickPowerBig = bigDiv(clicks, "5");
+  const clickPower = bigGt(clickPowerBig, String(Number.MAX_SAFE_INTEGER))
+    ? Number.MAX_SAFE_INTEGER
+    : Number(clickPowerBig);
   const winPower = (state.warRecords.wins || 0) * 500;
-  return cpsPower + clickPower + winPower;
+  return Math.min(cpsPower + clickPower + winPower, Number.MAX_SAFE_INTEGER);
 }
 
 function checkTitleUnlocks() {
@@ -512,9 +544,34 @@ let activeRoomCode = null;
 let currentRoomRole = null; // 'host' or 'guest' or null (AI)
 let roomWaitingPollInterval = null;
 
-function generateRoomCode() {
-  myGeneratedRoomCode = String(Math.floor(1000 + Math.random() * 9000));
-  return myGeneratedRoomCode;
+// [PATCH] 기존엔 4자리(1000~9999, 최대 9000개) 코드를 완전 랜덤으로만 뽑아서,
+// 사용자가 몇 명만 겹쳐도(생일 문제) 다른 사람이 쓰고 있는 방 코드와 충돌할
+// 확률이 낮지 않았음. supabaseCreateRoom이 upsert(onConflict: 'code')라
+// 충돌 시 다른 사람의 진행 중인 방을 통째로 덮어써버려서, 그 방에 있던
+// 사람은 갑자기 매칭이 끊기거나 이상 동작(배틀이 잘 안 되는 원인 중 하나)을
+// 겪을 수 있었음.
+// -> 코드를 뽑은 뒤 실제로 비어있는지 확인하고, 사용 중이면 다른 코드로 재시도.
+// (supabaseFetchRoom은 1시간 넘은 방치된 방을 자동 삭제하고 null을 반환하므로
+// 별도의 "방치 판별" 로직 없이 null 여부만 봐도 충분함)
+async function generateRoomCode() {
+  const MAX_ATTEMPTS = 8;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const candidate = String(Math.floor(1000 + Math.random() * 9000));
+    if (typeof supabaseFetchRoom !== 'function') {
+      // Supabase 연결이 없으면(오프라인) 충돌 검사를 할 수 없으니 그냥 사용
+      myGeneratedRoomCode = candidate;
+      return candidate;
+    }
+    const existing = await supabaseFetchRoom(candidate);
+    if (!existing) {
+      myGeneratedRoomCode = candidate;
+      return candidate;
+    }
+  }
+  // 8번 다 실패하면(이론상 거의 불가능) 그냥 마지막 후보라도 사용
+  const fallback = String(Math.floor(1000 + Math.random() * 9000));
+  myGeneratedRoomCode = fallback;
+  return fallback;
 }
 
 function startBattle(enemyInfo, roomCode = null, role = null) {
@@ -530,34 +587,97 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
 
   document.getElementById('enemyNameLabel').textContent = enemyInfo.name;
   document.getElementById('enemyCastleLabel').textContent = enemyInfo.name;
-  document.getElementById('enemyPowerLabel').textContent = enemyInfo.power.toLocaleString();
-  document.getElementById('battleTimerDisplay').textContent = '10s';
+  // [PATCH] 예전엔 enemyInfo.power(전투력) 숫자를 그대로 보여줘서 "전투력이
+  // 배틀에 영향을 주나?"라는 오해를 줬음. 실제 승패는 항상 클릭 수(myClicksInBattle
+  // vs enemyClicksInBattle)로만 정해지므로, 전투력 숫자 대신 클릭 대결이라는
+  // 걸 명확히 하는 고정 문구로 표시.
+  document.getElementById('enemyPowerLabel').textContent = '클릭으로 승부!';
+  document.getElementById('battleTimerDisplay').textContent = '대기 중...';
 
   updateFrontlineVisual();
 
   if (battleInterval) clearInterval(battleInterval);
-  battleInterval = setInterval(async () => {
-    battleTimeLeft--;
-    document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
-    // Real-time synchronization for room battles via Supabase
-    if (activeRoomCode && typeof supabaseFetchRoom === 'function' && typeof supabaseSubmitBattleTaps === 'function') {
-      // Sync my taps to Cloud
-      await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
-      // Fetch opponent's taps from Cloud
-      const r = await supabaseFetchRoom(activeRoomCode);
-      if (r) {
-        enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
-      }
-    } else {
-      // Simulated AI enemy taps
-      const simulatedTapRate = Math.floor(3 + Math.random() * 4);
+  // [PATCH] 방 대전(친구 대전)은 예전엔 게스트가 join 즉시 자기 타이머를 시작하고
+  // 호스트는 최대 2초 뒤 폴링으로 감지 후 시작해서, 서로 다른 시각에 배틀이
+  // 끝나버려 "배틀이 잘 안 된다"는 문제가 있었음.
+  // -> 실제 10초 카운트다운은 서버에 기록된 battle_start_at(같은 시각)이
+  //    확정된 뒤에만 시작하도록 바꿈. 그 전까지는 "대기 중" 상태로 멈춰있음.
+  if (activeRoomCode && typeof supabaseFetchRoom === 'function') {
+    runRoomBattleSync();
+  } else {
+    document.getElementById('battleTimerDisplay').textContent = '10s';
+    battleInterval = setInterval(() => {
+      battleTimeLeft--;
+      document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
+
+      // [PATCH] 기존엔 초당 3~6타 고정이라 CPS가 높은(성장한) 플레이어에게는
+      // 야만족이 너무 약했음. 내 CPS에 비례해서 AI 타수가 같이 세지도록 스케일링.
+      // - 기본 3~6타는 그대로 유지(초반 CPS=0일 때도 최소한의 긴장감)
+      // - CPS가 늘어날수록 sqrt(cps)에 비례해서 추가 타수를 얹음
+      //   (선형 비례로 하면 CPS가 아주 높을 때 인간이 절대 못 이기는 수준까지
+      //    치솟아버리므로, 완만하게 커지는 제곱근을 사용)
+      const aiScaling = Math.sqrt(state.cps || 0) * 0.8;
+      const simulatedTapRate = Math.floor(3 + Math.random() * 4 + aiScaling);
       enemyClicksInBattle += simulatedTapRate;
+
+      updateFrontlineVisual();
+
+      if (battleTimeLeft <= 0) {
+        endBattle();
+      }
+    }, 1000);
+  }
+}
+
+// [PATCH] 룸 대전 전용 동기화 루프.
+// startBattle이 호출되는 시점엔 이미 방장의 supabaseStartBattle(또는 게스트의
+// 폴링 확인)을 통해 battle_start_at이 서버에 확정돼 있음. 그래서 여기서는
+// 그 값을 다시 조회만 하면 되고, 별도로 확정(쓰기) 시도를 할 필요가 없음.
+// (예전엔 여기서 supabaseConfirmBattleStart를 또 호출해서 중복 API 호출이
+// 발생했음 — 결과 자체는 같았지만 불필요한 지연이었음)
+// 정해진 시각을 0초로 두고 실제 경과 시간을 기준으로 남은 시간을 계산해서
+// (setInterval 누적 오차 대신 진짜 서버 시각 차이를 씀) 호스트/게스트가
+// 정확히 같은 시점에 배틀을 끝내도록 함.
+async function runRoomBattleSync() {
+  let startAtMs = null;
+
+  // 짧은 간격으로 battle_start_at이 채워질 때까지 조회 (최대 5초)
+  let waited = 0;
+  while (!startAtMs && waited < 5000) {
+    const r = await supabaseFetchRoom(activeRoomCode);
+    if (r && r.battleStartAt) {
+      startAtMs = r.battleStartAt;
+      break;
+    }
+    await new Promise(res => setTimeout(res, 300));
+    waited += 300;
+  }
+
+  if (!startAtMs) {
+    // 서버 동기화에 계속 실패하면 지금 이 순간을 기준으로라도 시작 (완전 중단보다 낫음)
+    startAtMs = Date.now();
+  }
+
+  document.getElementById('battleTimerDisplay').textContent = '10s';
+
+  battleInterval = setInterval(async () => {
+    const elapsedSec = Math.floor((Date.now() - startAtMs) / 1000);
+    const remaining = Math.max(0, 10 - elapsedSec);
+    battleTimeLeft = remaining;
+    document.getElementById('battleTimerDisplay').textContent = `${remaining}s`;
+
+    // Sync my taps to Cloud
+    await supabaseSubmitBattleTaps(activeRoomCode, currentRoomRole, myClicksInBattle);
+    // Fetch opponent's taps from Cloud
+    const r = await supabaseFetchRoom(activeRoomCode);
+    if (r) {
+      enemyClicksInBattle = currentRoomRole === 'host' ? r.guestTaps : r.hostTaps;
     }
 
     updateFrontlineVisual();
 
-    if (battleTimeLeft <= 0) {
+    if (remaining <= 0) {
       endBattle();
     }
   }, 1000);
@@ -608,6 +728,12 @@ function endBattle() {
 
   checkTitleUnlocks();
   notifyStateChange();
+
+  // [PATCH] 배틀이 끝난 방을 정리해서, 같은 코드로 다시 대전할 때
+  // 이전 대전의 taps/battle_start_at이 남아있지 않도록 함.
+  if (activeRoomCode && typeof supabaseCleanupRoom === 'function') {
+    supabaseCleanupRoom(activeRoomCode);
+  }
 
   activeRoomCode = null;
   currentRoomRole = null;
@@ -744,7 +870,7 @@ function _renderRankingList(listEl, leaderboard) {
     const rank = i + 1;
     const isMe = state.currentUser && entry.id === state.currentUser.id;
     let scoreDisplay = '';
-    if (currentRankTab === 'clicks') scoreDisplay = `<span title="${(entry.clicks || 0).toLocaleString()}">${formatNumber(entry.clicks || 0)} 클릭</span>`;
+    if (currentRankTab === 'clicks') scoreDisplay = `<span title="${formatNumberFull(entry.clicks || '0')}">${formatNumber(entry.clicks || '0')} 클릭</span>`;
     else if (currentRankTab === 'power') scoreDisplay = `⚔️ ${formatNumber(entry.battlePower || 0)}`;
     else if (currentRankTab === 'honor') scoreDisplay = `🏆 ${entry.wins || 0}승`;
     
@@ -822,19 +948,15 @@ async function submitFeedback() {
 }
 
 // ---------- 10. Developer Tools Module (local only, no cloud sync) ----------
-function isDevMode() {
-  return localStorage.getItem('ck_dev_mode') === 'true';
-}
+// [PATCH] 기존엔 isDevMode()가 localStorage의 로컬 플래그만 확인했는데,
+// 그 플래그를 켜는 유일한 버튼(adminLoginSubmit)조차 플래그가 꺼져있으면
+// adminNavBtn이 안 보여서 애초에 누를 수 없는 순환 참조였음.
+// HTML 주석에 "Admin Page View (jay0216 only)"라고 의도가 명시돼 있었으므로,
+// 계정 닉네임이 jay0216일 때만 admin 기능이 열리도록 변경.
+const ADMIN_NICKNAME = 'jay0216';
 
-function toggleDevMode() {
-  const current = isDevMode();
-  localStorage.setItem('ck_dev_mode', current ? 'false' : 'true');
-  if (!current) {
-    showToast('⚙️ 개발자 모드가 활성화되었습니다.');
-  } else {
-    showToast('⚙️ 개발자 모드가 비활성화되었습니다.');
-  }
-  renderActiveView();
+function isDevMode() {
+  return !!(state.currentUser && state.currentUser.nickname === ADMIN_NICKNAME);
 }
 
 function renderAdminView() {
@@ -1169,29 +1291,129 @@ let emojiRainTimer = null;
 
 const RAIN_EMOJIS = ['🪙', '💰', '✨', '💎', '👑', '⚔️', '🛡️', '🐲', '⭐', '🌟'];
 
+// [PATCH] 이모지 비가 씰(클리커) 버튼에 닿으면 튕기도록 구현.
+// 기존엔 CSS @keyframes로 시작~끝 위치만 정해놓고 브라우저가 보간했는데,
+// 이 방식은 중간 위치를 JS가 알 수 없어서 충돌 감지가 불가능했음.
+// -> requestAnimationFrame으로 각 이모지의 위치(x, y)와 속도(vx, vy)를
+//    직접 계산하고, 매 프레임 씰 버튼의 원형 히트박스와 겹치는지 검사해서
+//    겹치면 속도를 반사시키는 방식으로 교체.
+let _emojiRainDrops = [];
+let _emojiRainRafId = null;
+
+function _getSealHitCircle(container) {
+  const sealBtn = document.getElementById('sealBtn');
+  if (!sealBtn || !container) return null;
+  const sealRect = sealBtn.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  if (sealRect.width === 0) return null; // 아직 화면에 없음
+  return {
+    // container(emojiRain) 기준 상대 좌표로 변환
+    cx: sealRect.left - containerRect.left + sealRect.width / 2,
+    cy: sealRect.top - containerRect.top + sealRect.height / 2,
+    r: sealRect.width / 2 // 씰 버튼은 원형이므로 반지름 = 너비/2
+  };
+}
+
 function spawnEmojiRain(cps) {
   const container = document.getElementById('emojiRain');
   if (!container) return;
   if (cps <= 0) return;
+  const containerRect = container.getBoundingClientRect();
   const emoji = RAIN_EMOJIS[Math.floor(Math.random() * RAIN_EMOJIS.length)];
   const el = document.createElement('span');
   el.className = 'emoji-drop';
   el.textContent = emoji;
-  el.style.left = (5 + Math.random() * 90) + '%';
-  el.style.fontSize = (14 + Math.random() * 16) + 'px';
-  const fallDuration = 2 + Math.random() * 3;
-  el.style.setProperty('--fall-distance', (300 + Math.random() * 300) + 'px');
-  el.style.setProperty('--drift', (Math.random() * 60 - 30) + 'px');
-  el.style.setProperty('--spin', (Math.random() * 720 - 360) + 'deg');
-  el.style.animationDuration = fallDuration + 's';
+  const fontSize = 14 + Math.random() * 16;
+  el.style.fontSize = fontSize + 'px';
   container.appendChild(el);
-  setTimeout(() => el.remove(), fallDuration * 1000);
+
+  _emojiRainDrops.push({
+    el,
+    x: containerRect.width * (0.05 + Math.random() * 0.9),
+    y: -30,
+    vx: (Math.random() * 60 - 30) / 60, // px/frame (기존 --drift 감각 유지, 60fps 기준)
+    vy: (2 + Math.random() * 2), // px/frame 낙하 속도
+    rot: 0,
+    vrot: (Math.random() * 6 - 3), // deg/frame
+    size: fontSize,
+    life: 0,
+    maxLife: 300 + Math.random() * 180 // 프레임 수 (약 5~8초, 60fps 기준)
+  });
+
+  if (!_emojiRainRafId) _emojiRainRafId = requestAnimationFrame(_tickEmojiRain);
+}
+
+function _tickEmojiRain() {
+  const container = document.getElementById('emojiRain');
+  if (!container || _emojiRainDrops.length === 0) {
+    _emojiRainRafId = null;
+    return;
+  }
+  const containerRect = container.getBoundingClientRect();
+  const hitCircle = _getSealHitCircle(container);
+
+  for (let i = _emojiRainDrops.length - 1; i >= 0; i--) {
+    const d = _emojiRainDrops[i];
+    d.life++;
+
+    // 씰 버튼과의 충돌 검사 (이모지 중심점이 씰 원형 히트박스 안에 들어왔는지)
+    if (hitCircle) {
+      const emojiCx = d.x;
+      const emojiCy = d.y + d.size / 2;
+      const dx = emojiCx - hitCircle.cx;
+      const dy = emojiCy - hitCircle.cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const collideDist = hitCircle.r + d.size / 3; // 이모지 반경 근사치 포함
+
+      if (dist < collideDist && dist > 0) {
+        // 충돌 지점 법선 방향으로 튕겨나가도록 속도 반사
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const speed = Math.max(2.5, Math.sqrt(d.vx * d.vx + d.vy * d.vy));
+        d.vx = nx * speed;
+        d.vy = Math.min(ny * speed, -0.5); // 항상 위쪽으로 살짝 튕기게 보정
+        d.vrot *= -1.5;
+        // 겹침 방지: 충돌 지점 바로 바깥으로 밀어냄
+        d.x = hitCircle.cx + nx * collideDist;
+        d.y = hitCircle.cy + ny * collideDist - d.size / 2;
+        d.bounced = true;
+      }
+    }
+
+    // 튕긴 뒤엔 중력을 살짝 줘서 자연스럽게 다시 떨어지도록
+    if (d.bounced) {
+      d.vy += 0.15;
+    }
+
+    d.x += d.vx;
+    d.y += d.vy;
+    d.rot += d.vrot;
+
+    const fadeStart = d.maxLife * 0.8;
+    const opacity = d.life > fadeStart
+      ? Math.max(0, 0.6 * (1 - (d.life - fadeStart) / (d.maxLife - fadeStart)))
+      : 0.6;
+
+    d.el.style.transform = `translate(${d.x}px, ${d.y}px) rotate(${d.rot}deg)`;
+    d.el.style.opacity = opacity;
+
+    // 화면 아래로 완전히 벗어났거나 수명이 다하면 제거
+    if (d.y > containerRect.height + 40 || d.life > d.maxLife) {
+      d.el.remove();
+      _emojiRainDrops.splice(i, 1);
+    }
+  }
+
+  _emojiRainRafId = _emojiRainDrops.length > 0 ? requestAnimationFrame(_tickEmojiRain) : null;
 }
 
 function startEmojiRain(cps) {
   stopEmojiRain();
   if (cps <= 0) return;
-  const interval = Math.max(100, 3000 / (1 + cps * 0.3));
+  // [PATCH] 기존엔 최소 간격이 100ms(0.1초)로 막혀있어서 CPS가 아무리 높아도
+  // 이모지가 0.1초에 1개보다 빨리 못 떨어졌음. 최대 속도를 0.03초(30ms)에
+  // 1개로 완화.
+  const interval = Math.max(30, 3000 / (1 + cps * 0.3));
   emojiRainTimer = setInterval(() => spawnEmojiRain(cps), interval);
   // Spawn a few immediately
   for (let i = 0; i < Math.min(5, Math.ceil(cps / 10)); i++) {
@@ -1204,6 +1426,11 @@ function stopEmojiRain() {
     clearInterval(emojiRainTimer);
     emojiRainTimer = null;
   }
+  if (_emojiRainRafId) {
+    cancelAnimationFrame(_emojiRainRafId);
+    _emojiRainRafId = null;
+  }
+  _emojiRainDrops = [];
   const container = document.getElementById('emojiRain');
   if (container) container.innerHTML = '';
 }
@@ -1259,7 +1486,14 @@ function renderClickerView(clicks, tier) {
     clickCountEl.title = typeof clicks === 'string' ? clicks : clicks.toLocaleString();
   }
 
-  document.getElementById('cpsLabel').textContent = `자동 수확: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초`;
+  // [PATCH] 클릭당 획득량(clickMultiplier)은 보구 배율에 따라 소수(예: 1.5)가
+  // 될 수 있는데, formatNumber는 1000 미만 값을 Math.floor로 버려서 소수점이
+  // 사라짐. 여기선 소수점 최대 2자리까지 살려서 정확히 보여줌.
+  const clickPerTap = state.clickMultiplier || 1;
+  const clickPerTapText = clickPerTap % 1 === 0
+    ? formatNumber(clickPerTap)
+    : clickPerTap.toFixed(2).replace(/\.?0+$/, '');
+  document.getElementById('cpsLabel').textContent = `자동 수확: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초 | 🖱️ 클릭당: +${clickPerTapText}`;
   document.getElementById('guestBanner').hidden = !!state.currentUser;
 
   const tObj = UNLOCKABLE_TITLES.find(t => t.id === state.equippedTitle);
@@ -1941,13 +2175,20 @@ async function handleSignup() {
   if (id.length < 3) { errEl.textContent = '아이디는 3자 이상으로 입력해 주세요.'; return; }
   if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상으로 입력해 주세요.'; return; }
   if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 일치하지 않아요.'; return; }
+  // [PATCH] admin 페이지는 닉네임이 jay0216인 계정에만 자동으로 열리는데,
+  // 닉네임 중복 검사가 없어서 아무나 이 닉네임으로 가입하면 admin 권한을
+  // 가질 수 있었음. 예약 닉네임으로 막아서 다른 사람이 사용하지 못하게 함.
+  if (nickname === ADMIN_NICKNAME) {
+    errEl.textContent = '해당 닉네임은 사용할 수 없어요.';
+    return;
+  }
 
   const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
   if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
   const passwordHash = await hashPassword(pw);
   const account = {
-    id, nickname, passwordHash, clicks: 0,
+    id, nickname, passwordHash, clicks: "0", // [PATCH] 타입 일관성(문자열) 유지
     armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
     warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
     missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
@@ -1974,7 +2215,7 @@ async function handleSignup() {
 async function handleLogout() {
   await flushSave();
   state.currentUser = null;
-  state.localClicks = 0;
+  state.localClicks = "0"; // [PATCH] 다른 곳과 타입 일관성 유지 (BigInt 문자열 컨벤션)
   await clearSession();
   renderTopbarActions();
   switchView('landing');
@@ -1992,6 +2233,16 @@ function setupEventListeners() {
       if (state.currentView === 'clicker') {
         e.preventDefault();
         handleSealClick(null);
+      } else if (state.currentView === 'battle') {
+        // [PATCH] 배틀 화면에서는 스페이스바가 아무 반응이 없었음.
+        // 배틀 아레나가 열려있고(대전 진행 중) 남은 시간이 있을 때만
+        // registerMyBattleTap을 눌러서, 마우스 클릭과 동일하게 스페이스바로도
+        // 탭할 수 있게 함.
+        const arenaPanel = document.getElementById('battleArenaPanel');
+        if (arenaPanel && !arenaPanel.hidden && battleTimeLeft > 0) {
+          e.preventDefault();
+          registerMyBattleTap();
+        }
       }
     }
   });
@@ -2081,7 +2332,7 @@ function setupEventListeners() {
         openModal('authModal');
         return;
       }
-      const code = generateRoomCode();
+      const code = await generateRoomCode();
       const roomCard = document.getElementById('myRoomCodeCard');
       if (roomCard) roomCard.hidden = false;
       document.getElementById('roomCodeDisplay').textContent = code;
@@ -2105,6 +2356,11 @@ function setupEventListeners() {
               clearInterval(roomWaitingPollInterval);
               roomWaitingPollInterval = null;
               showToast(`⚔️ [${r.guestNickname || '친구'}]님 입장 완료! 대전을 시작합니다!`);
+              // 서버에 배틀 시작 시각을 기록. 게스트도 이 값을 폴링해서
+              // 같은 시각에 타이머를 시작하도록 동기화됨.
+              if (typeof supabaseStartBattle === 'function') {
+                await supabaseStartBattle(code);
+              }
               startBattle({
                 name: `👑 ${r.guestNickname || '친구 영주'}의 군대`,
                 power: Math.max(1000, state.cps * 8)
@@ -2163,8 +2419,28 @@ function setupEventListeners() {
             name: `👑 ${room.hostNickname || '친구 영주'}의 군대`,
             power: room.hostPower || Math.max(1200, state.cps * 7 + 800)
           };
-          showToast(`⚔️ ${room.hostNickname || '친구 영주'} 룸 입장! 대전을 시작합니다!`);
-          startBattle(enemyInfo, inputCode, 'guest');
+          showToast(`⚔️ ${room.hostNickname || '친구 영주'} 룸 입장! 호스트의 대전 시작을 기다리는 중...`);
+
+          // 호스트가 매칭을 감지하고 supabaseStartBattle로 battle_start_at을
+          // 기록할 때까지 짧게 폴링. 이 신호가 오기 전에 게스트가 먼저 타이머를
+          // 시작해버리면 호스트/게스트 배틀 종료 시점이 어긋나는 문제가 있었음.
+          if (roomWaitingPollInterval) clearInterval(roomWaitingPollInterval);
+          let guestWaitTicks = 0;
+          roomWaitingPollInterval = setInterval(async () => {
+            guestWaitTicks++;
+            const r = await supabaseFetchRoom(inputCode);
+            if (r && r.battleStartAt) {
+              clearInterval(roomWaitingPollInterval);
+              roomWaitingPollInterval = null;
+              showToast(`⚔️ 대전을 시작합니다!`);
+              startBattle(enemyInfo, inputCode, 'guest');
+            } else if (guestWaitTicks >= 15) {
+              // 15초 넘게 호스트가 시작하지 않으면 (호스트 이탈 등) 타임아웃 처리
+              clearInterval(roomWaitingPollInterval);
+              roomWaitingPollInterval = null;
+              showToast('❌ 호스트가 대전을 시작하지 않았습니다. 잠시 후 다시 시도해 주세요.');
+            }
+          }, 1000);
         } else {
           showToast('❌ 룸 코드를 찾을 수 없습니다. 코드를 확인해 주세요.');
           return;
@@ -2214,8 +2490,12 @@ function setupEventListeners() {
   document.getElementById('feedbackModalClose').onclick = () => closeModal('feedbackModal');
 
   // Developer Tools - self-only debug functions (no cloud sync)
+  // [PATCH] isDevMode()가 이제 jay0216 계정 로그인 여부로 결정되므로,
+  // 이 버튼(및 adminLoginForm 전체)은 이론상 jay0216이 아닌 사람에게는
+  // 노출될 일이 없음(adminNavBtn 자체가 hidden 처리됨). 혹시라도 도달하면
+  // 안내만 표시.
   document.getElementById('adminLoginSubmit').onclick = () => {
-    toggleDevMode();
+    showToast('⚙️ 관리자 페이지는 jay0216 계정으로 로그인해야 이용할 수 있습니다.');
   };
   document.getElementById('adminSetClickBtn').onclick = handleAdminCustomClickSet;
   document.getElementById('adminCheat1M').onclick = () => giveAdminGold(1000000);
