@@ -5,11 +5,11 @@
 // ============================================================================
 
 // ---------- 숫자 단축 표기 ----------
-// K(1e3) → M → B → T → aa(1e15) → ht(1e18, 핵타) → ac … → ∞(1e60+)
+// K(1e3) → M → B → T → aa(1e15) → ht(1e18, 핵타) → zz … → ∞(1e100+)
 function buildNumberUnits() {
-  const units = [{ value: 1e60, suffix: '∞' }];
+  const units = [{ value: 1e100, suffix: '∞' }];
 
-  for (let exp = 57; exp >= 21; exp -= 3) {
+  for (let exp = 99; exp >= 21; exp -= 3) {
     const idx = (exp - 15) / 3;
     const c1 = String.fromCharCode(97 + Math.floor(idx / 26));
     const c2 = String.fromCharCode(97 + (idx % 26));
@@ -17,7 +17,7 @@ function buildNumberUnits() {
   }
 
   units.push(
-    { value: 1e18, suffix: 'ht' },  // 핵타 (heokta)
+    { value: 1e18, suffix: 'TK' },  // 핵타 (heokta)
     { value: 1e15, suffix: 'aa' },
     { value: 1e12, suffix: 'T' },
     { value: 1e9, suffix: 'B' },
@@ -98,16 +98,16 @@ function formatNumberFull(n) {
 // ---------- 제국 단계 (Kingdom Tiers) ----------
 // 목표: 초반은 빠르게, 마지막 "무한의 영역"은 약 10해(10핵타) 클릭이 필요
 //
-// 단계별 요구 클릭 수 (지수적 증가):
+// 단계별 요구 클릭 수 (지수적 증가, 초반~중반도 높게 조정):
 //   0 → 초라한 오두막:  0
-//   1 → 통나무 보루:    1,000
-//   2 → 석조 요새:      5,000,000,000 (50억)
-//   3 → 번창하는 성채:  500,000,000,000 (5000억)
-//   4 → 황금 왕국:      5,000,000,000,000,000 (5000조)
-//   5 → 천상 제국:      100,000,000,000,000,000 (10경)
-//   6 → 신의 영역:      1,000,000,000,000,000,000 (100경)
-//   7 → 초월의 왕국:    100,000,000,000,000,000,000 (100해)
-//   8 → 무한의 영역:    1e60 (1간)  ← 최종 목표
+//   1 → 통나무 보루:    1,000 (1e3)
+//   2 → 석조 요새:      1,000,000,000,000 (1e12 / 1조)
+//   3 → 번창하는 성채:  1e15 (1000조)
+//   4 → 황금 왕국:      5e18
+//   5 → 천상 제국:      1e20
+//   6 → 신의 영역:      1e30
+//   7 → 초월의 왕국:    1e50
+//   8 → 무한의 영역:    1e100 ← 최종 목표
 const KINGDOM_TIERS = [
   {
     clicks: 0,
@@ -126,7 +126,7 @@ const KINGDOM_TIERS = [
     gems: 1, crown: false, glow: 0.15
   },
   {
-    clicks: 5e9,
+    clicks: 1e12,          // 1조
     name: '석조 요새',
     title: '영주',
     core1: '#4a525d', core2: '#282d35',
@@ -134,7 +134,7 @@ const KINGDOM_TIERS = [
     gems: 2, crown: false, glow: 0.3
   },
   {
-    clicks: 5e11,           // 5000억
+    clicks: 1e15,          // 1000조
     name: '번창하는 성채',
     title: '정복왕',
     core1: '#7a2b37', core2: '#42161d',
@@ -142,7 +142,7 @@ const KINGDOM_TIERS = [
     gems: 3, crown: true, glow: 0.5
   },
   {
-    clicks: 5e15,         // 5000조
+    clicks: 5e18,          // 500경
     name: '황금 왕국',
     title: '제국 황제',
     core1: '#856a28', core2: '#473812',
@@ -150,7 +150,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.7
   },
   {
-    clicks: 1e17,      // 10경
+    clicks: 1e20,          // 1해
     name: '천상 제국',
     title: '천상 패왕',
     core1: '#4d2b7a', core2: '#281442',
@@ -158,7 +158,7 @@ const KINGDOM_TIERS = [
     gems: 4, crown: true, glow: 0.85
   },
   {
-    clicks: 1e18,    // 100경
+    clicks: 1e30,          // 1 백해
     name: '신의 영역',
     title: '불멸의 신황',
     core1: '#1a3a6b', core2: '#0d1f3b',
@@ -166,7 +166,7 @@ const KINGDOM_TIERS = [
     gems: 5, crown: true, glow: 0.95
   },
   {
-    clicks: 1e20,              // 100해
+    clicks: 1e50,          // 10극
     name: '초월의 왕국',
     title: '우주의 지배자',
     core1: '#3b1a6b', core2: '#1f0d3b',
@@ -174,7 +174,7 @@ const KINGDOM_TIERS = [
     gems: 6, crown: true, glow: 1.0
   },
   {
-    clicks: 1e60,              // 1간 — 최종 목표
+    clicks: 1e100,             // 1 구골 — 무한의 영역
     name: '무한의 영역',
     title: '무한의 존재',
     core1: '#1a1a1a', core2: '#000000',
@@ -184,6 +184,7 @@ const KINGDOM_TIERS = [
 ];
 
 // 이 값을 초과하면 beyondMax (신 칭호 해금, 글리치 효과)
+// 무한의 영역(1e100)을 넘으려면 1e200까지 가야 하므로 충분히 간격 둠
 const MAX_TIER_CLICKS = 1e200;
 
 
@@ -465,8 +466,28 @@ const DAILY_MISSIONS = [
 function toBig(val) {
   if (typeof val === 'bigint') return val;
   if (typeof val === 'string' && /^-?\d+$/.test(val)) return BigInt(val);
-  if (typeof val === 'number' && isFinite(val)) return BigInt(Math.floor(val));
+  if (typeof val === 'number' && isFinite(val) && val <= Number.MAX_SAFE_INTEGER) return BigInt(Math.floor(val));
   return BigInt(0);
+}
+
+// [PATCH] addClicks 등에서 amount로 들어오는 값이 Number(부동소수점), 문자열,
+// BigInt 등 뭐가 오든 안전하게 정수 문자열로 바꿔주는 헬퍼.
+// Number가 Number.MAX_SAFE_INTEGER를 넘거나 Infinity/NaN이면(CPS가 극단적으로
+// 커진 경우 등) 그대로 두면 오차나 손실이 생기므로, 그런 경우엔 문자열로
+// 이미 들어온 값을 우선 신뢰하거나 안전한 최대치로 클램프한다.
+function bigSafeAmount(amount) {
+  if (typeof amount === 'string' && /^-?\d+$/.test(amount)) return amount;
+  if (typeof amount === 'bigint') return amount.toString();
+  if (typeof amount === 'number') {
+    if (!isFinite(amount) || isNaN(amount)) return '0';
+    if (amount > Number.MAX_SAFE_INTEGER) {
+      // 부동소수점으로 넘어온 시점에 이미 정밀도가 깨졌을 수 있으므로,
+      // 최소한 안전한 정수 범위로 클램프해서 Infinity/NaN 저장을 막는다.
+      return String(Number.MAX_SAFE_INTEGER);
+    }
+    return String(Math.floor(amount));
+  }
+  return '0';
 }
 function bigGte(a, b) { return toBig(a) >= toBig(b); }
 function bigGt(a, b) { return toBig(a) > toBig(b); }
@@ -479,4 +500,16 @@ function bigDiv(a, b) { return (toBig(a) / toBig(b)).toString(); }
 function bigMax(a, b) { return bigGte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
 function bigMin(a, b) { return bigLte(a, b) ? toBig(a).toString() : toBig(b).toString(); }
 function bigPow10AsString(exp) { return '1' + '0'.repeat(exp); }
+
+// [PATCH] 아이템 가격 계산: 기존엔 10^(count^2)로 지수가 count의 "제곱"으로
+// 커져서(예: 5번째 구매 시 10^25배) 몇 번만 사도 사실상 구매가 불가능해지는
+// 문제가 있었음. baseCost * 2^count 로 교체 (완만한 지수 증가).
+// BigInt 거듭제곱(2n ** BigInt(count))은 부동소수점 오차 없이 완전한 정수로
+// 계산되므로, count가 아무리 커져도(수백~수천) 정밀도 손실이 없다.
+function bigGrowthCost(baseCost, count, rate = 2) {
+  if (count <= 0) return toBig(baseCost).toString();
+  const growth = BigInt(rate) ** BigInt(count); // 2^count
+  const cost = toBig(baseCost) * growth;
+  return bigMax(cost.toString(), baseCost);
+}
 
