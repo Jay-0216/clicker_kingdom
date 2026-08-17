@@ -769,7 +769,18 @@ function endBattle() {
   setTimeout(() => {
     document.getElementById('battleSetupPanel').hidden = false;
     document.getElementById('battleArenaPanel').hidden = true;
+    resetRoomCodeUI();
   }, 1500);
+}
+
+// 룸 코드 카드/친구 코드 입력 칸을 대전 시작 전 초기 상태로 되돌림.
+function resetRoomCodeUI() {
+  const roomCard = document.getElementById('myRoomCodeCard');
+  const joinSection = document.getElementById('joinRoomSection');
+  const roomInput = document.getElementById('roomCodeInput');
+  if (roomCard) roomCard.hidden = true;
+  if (joinSection) joinSection.hidden = false;
+  if (roomInput) roomInput.value = '';
 }
 
 // [PATCH] 대전 화면을 벗어날 때(다른 메뉴 탭 클릭 등) 배틀 인터벌/룸 대기
@@ -794,10 +805,9 @@ function stopBattleActivity() {
 
   const setupPanel = document.getElementById('battleSetupPanel');
   const arenaPanel = document.getElementById('battleArenaPanel');
-  const roomCard = document.getElementById('myRoomCodeCard');
   if (setupPanel) setupPanel.hidden = false;
   if (arenaPanel) arenaPanel.hidden = true;
-  if (roomCard) roomCard.hidden = true;
+  resetRoomCodeUI();
 }
 
 // ---------- 7. Missions Module ----------
@@ -2425,6 +2435,12 @@ function setupEventListeners() {
       const roomCard = document.getElementById('myRoomCodeCard');
       if (roomCard) roomCard.hidden = false;
       document.getElementById('roomCodeDisplay').textContent = code;
+      // [PATCH] 방장은 친구가 자기 코드로 입장하면 자동으로 대전이 시작되므로
+      // "친구 코드 입력" 칸을 볼 필요가 없음. 오히려 방장이 실수로 다른 방
+      // 코드를 입력해버리면 자기 방 대기가 아닌 엉뚱한 대전에 들어가버리는
+      // 혼란을 줄 수 있어 대기 중엔 숨김.
+      const joinSection = document.getElementById('joinRoomSection');
+      if (joinSection) joinSection.hidden = true;
 
       // Upload room to Supabase so friend can find it
       if (typeof supabaseCreateRoom === 'function') {
