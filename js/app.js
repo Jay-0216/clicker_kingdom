@@ -548,6 +548,11 @@ let myClicksInBattle = 0;
 let enemyClicksInBattle = 0;
 let currentEnemy = null;
 let myGeneratedRoomCode = null;
+// [PATCH] 진짜 10초 카운트다운이 시작된 뒤에만 true. startBattle() 호출 직후부터
+// (룸 대전은 서버 battle_start_at 확인까지, AI 대전은 setInterval 등록까지) 대전
+// 화면은 이미 떠있지만 아직 시계는 안 돈 "공백 구간"에 registerMyBattleTap이
+// 시간 소모 없이 클릭을 무제한 카운트해버리던 버그를 막기 위한 플래그.
+let battleClockRunning = false;
 
 let activeRoomCode = null;
 let currentRoomRole = null; // 'host' or 'guest' or null (AI)
@@ -590,6 +595,7 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
   myClicksInBattle = 0;
   enemyClicksInBattle = 0;
   battleTimeLeft = 10;
+  battleClockRunning = false;
 
   document.getElementById('battleSetupPanel').hidden = true;
   document.getElementById('battleArenaPanel').hidden = false;
@@ -616,6 +622,7 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
     runRoomBattleSync();
   } else {
     document.getElementById('battleTimerDisplay').textContent = '10s';
+    battleClockRunning = true;
     battleInterval = setInterval(() => {
       battleTimeLeft--;
       document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
@@ -668,6 +675,7 @@ async function runRoomBattleSync() {
   }
 
   document.getElementById('battleTimerDisplay').textContent = '10s';
+  battleClockRunning = true;
 
   battleInterval = setInterval(async () => {
     const elapsedSec = Math.floor((Date.now() - startAtMs) / 1000);
@@ -692,7 +700,10 @@ async function runRoomBattleSync() {
 }
 
 function registerMyBattleTap() {
-  if (battleTimeLeft <= 0) return;
+  // [PATCH] 실제 10초 시계가 돌기 전(대기 화면에서 미리 연타)에는 카운트하지
+  // 않음. battleClockRunning이 false인 동안 클릭이 시간 소모 없이 무제한
+  // 반영되던 버그를 막기 위함.
+  if (!battleClockRunning || battleTimeLeft <= 0) return;
   myClicksInBattle += 1;
   updateFrontlineVisual();
 
@@ -718,12 +729,19 @@ function updateFrontlineVisual() {
 
 function endBattle() {
   clearInterval(battleInterval);
+  battleClockRunning = false;
 
-  const isWin = myClicksInBattle >= enemyClicksInBattle;
+  // [PATCH] 예전엔 "내 점수 >= 상대 점수"만 봐서 동점일 때 호스트/게스트
+  // 양쪽 클라이언트 모두 자신을 승자로 판단해 둘 다 승리 보상을 받는 문제가
+  // 있었음. 동점은 무승부로 별도 처리해서 어느 쪽도 이중 보상을 받지 않게 함.
+  const isDraw = myClicksInBattle === enemyClicksInBattle;
+  const isWin = !isDraw && myClicksInBattle > enemyClicksInBattle;
   state.warRecords.totalBattles = (state.warRecords.totalBattles || 0) + 1;
   state.missionProgress.battleCount = (state.missionProgress.battleCount || 0) + 1;
 
-  if (isWin) {
+  if (isDraw) {
+    showToast(`🤝 무승부! 10초 클릭 (${myClicksInBattle}회 vs 적 ${enemyClicksInBattle}회) - 승부를 가리지 못했습니다.`);
+  } else if (isWin) {
     state.warRecords.wins = (state.warRecords.wins || 0) + 1;
     const plunder = Math.max(1000, myClicksInBattle * 100);
     state.warRecords.plunderedClicks = (state.warRecords.plunderedClicks || 0) + plunder;
@@ -752,6 +770,34 @@ function endBattle() {
     document.getElementById('battleSetupPanel').hidden = false;
     document.getElementById('battleArenaPanel').hidden = true;
   }, 1500);
+}
+
+// [PATCH] 대전 화면을 벗어날 때(다른 메뉴 탭 클릭 등) 배틀 인터벌/룸 대기
+// 폴링이 백그라운드에서 계속 돌던 버그를 막기 위한 정리 함수. switchView()가
+// 'battle'이 아닌 다른 뷰로 이동할 때 호출됨.
+function stopBattleActivity() {
+  if (battleInterval) {
+    clearInterval(battleInterval);
+    battleInterval = null;
+  }
+  if (roomWaitingPollInterval) {
+    clearInterval(roomWaitingPollInterval);
+    roomWaitingPollInterval = null;
+  }
+  battleClockRunning = false;
+
+  if (activeRoomCode && typeof supabaseCleanupRoom === 'function') {
+    supabaseCleanupRoom(activeRoomCode);
+  }
+  activeRoomCode = null;
+  currentRoomRole = null;
+
+  const setupPanel = document.getElementById('battleSetupPanel');
+  const arenaPanel = document.getElementById('battleArenaPanel');
+  const roomCard = document.getElementById('myRoomCodeCard');
+  if (setupPanel) setupPanel.hidden = false;
+  if (arenaPanel) arenaPanel.hidden = true;
+  if (roomCard) roomCard.hidden = true;
 }
 
 // ---------- 7. Missions Module ----------
@@ -1072,6 +1118,11 @@ function switchView(viewName) {
       cancelAnimationFrame(shooterAnimFrame);
       shooterAnimFrame = null;
     }
+  }
+
+  // Stop battle interval / room polling if navigating away from battle view
+  if (viewName !== 'battle' && typeof battleInterval !== 'undefined' && (battleInterval || roomWaitingPollInterval)) {
+    stopBattleActivity();
   }
 
   // Start/stop emoji rain based on CPS when entering clicker view
@@ -2447,10 +2498,17 @@ function setupEventListeners() {
 
           // Mark room as joined in Supabase
           if (typeof supabaseJoinRoom === 'function') {
-            await supabaseJoinRoom(inputCode, {
+            const joined = await supabaseJoinRoom(inputCode, {
               id: state.currentUser.id,
               nickname: state.currentUser.nickname
             });
+            // [PATCH] 이미 다른 사람이 입장했거나(중복 클릭/제3자) 대전 중인
+            // 방이면 joined=false. 예전엔 반환값을 무시하고 그냥 진행해서,
+            // 이미 진행 중인 방의 battle_start_at이 리셋되어 대전이 깨졌음.
+            if (!joined) {
+              showToast('❌ 이미 다른 사람이 입장했거나 진행 중인 방입니다. 코드를 다시 확인해 주세요.');
+              return;
+            }
           }
 
           const enemyInfo = {

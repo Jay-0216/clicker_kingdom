@@ -48,6 +48,13 @@ clicker kingdom/
 
 ## 3. 변경 이력 (Changelog)
 
+### [v2.9.1] - 2026-08-17
+- **친구 대전(룸 배틀) 버그 수정 (`js/app.js`, `js/supabase-sync.js`)**:
+  - **시계 시작 전 공짜 연타**: `startBattle()` 호출 직후(룸 대전은 `battle_start_at` 서버 확인 전, AI 대전은 `setInterval` 등록 전) "대기 중" 화면에서 미리 연타하면 시간 소모 없이 점수가 쌓이던 버그. `battleClockRunning` 플래그를 추가해 실제 10초 카운트다운이 시작된 뒤에만 `registerMyBattleTap()`이 클릭을 반영하도록 수정.
+  - **동점 시 양쪽 다 승리 처리**: `isWin = myClicksInBattle >= enemyClicksInBattle`가 호스트/게스트 양쪽 클라이언트에서 각자 자신을 승자로 판단해, 동점일 때 둘 다 승리 보상(약탈 자금)을 받던 버그. 동점을 별도 무승부(`무승부` 토스트, 보상 없음)로 처리하도록 수정.
+  - **진행 중인 방 가로채기**: `supabaseJoinRoom()`이 방 상태를 확인하지 않고 무조건 덮어써서, 입장 버튼 중복 클릭이나 제3자가 이미 매칭/대전 중인 방 코드로 입장하면 `battle_start_at`이 다시 `null`로 리셋되어 진행 중인 대전이 깨지던 버그. `status='waiting'` 및 `guest_id IS NULL` 조건을 걸어 이미 찬 방은 입장이 실패(false 반환)하도록 수정, `joinRoomBtn` 핸들러도 반환값을 확인해 실패 시 안내 후 중단하도록 수정.
+  - **뷰 이동 시 배틀/폴링 미정리**: `switchView()`가 슈팅 미니게임 루프는 정지시키지만 대전 화면의 `battleInterval`/`roomWaitingPollInterval`은 정리하지 않아, 대전·룸 대기 중 다른 탭으로 이동해도 백그라운드에서 폴링/카운트다운이 계속되던 문제. `stopBattleActivity()`를 추가해 `battle` 뷰를 벗어날 때 인터벌 정리, 진행 중이던 룸 정리(`supabaseCleanupRoom`), 배틀 패널 초기화를 수행하도록 수정.
+
 ### [v2.9.0] - 2026-07-29
 - **게임 설정 파일 분리 (`js/game-config.js`)**:
   - `KINGDOM_TIERS`, `ARMY_ITEMS`, `MULTIPLIER_RELICS`, `VISUAL_EFFECTS`, `OFFLINE_CPS_ITEMS`, `UNLOCKABLE_TITLES`, `DAILY_MISSIONS`, `ADMIN_PASSWORD`를 `app.js`에서 분리.
