@@ -48,6 +48,13 @@ clicker kingdom/
 
 ## 3. 변경 이력 (Changelog)
 
+### [v2.9.2] - 2026-08-17
+- **로그인/회원가입 중 조용히 실패하던 버그 수정 (`js/app.js`)**:
+  - `verifyPassword`/`hashPassword`가 `crypto.subtle`(Web Crypto API)을 확인 없이 바로 호출해서, 보안 컨텍스트가 아닌 환경(https/localhost가 아닌 iframe 미리보기 등)에서는 `crypto.subtle`이 `undefined`라 "Cannot read properties of undefined (reading 'digest')"로 uncaught promise rejection이 나며 로그인/회원가입이 아무 안내 없이 실패하던 문제. `assertCryptoAvailable()`로 미리 확인해 명확한 에러를 던지고, `handleLogin`/`handleSignup`을 try/catch로 감싸 `describeAuthError()`가 사용자에게 원인을 안내하도록 수정.
+- **잘못된 `X-Frame-Options` meta 태그 제거 (`index.html`)**:
+  - `X-Frame-Options`는 HTTP 헤더로만 설정 가능하고 `<meta>`로는 브라우저가 무시하며 콘솔 경고만 남김. 실제 헤더는 이미 `_headers` 파일에서 설정하고 있어 meta 태그는 무의미했으므로 삭제.
+- **favicon 404 제거 (`index.html`)**: favicon 링크가 아예 없어 브라우저가 기본 `/favicon.ico`를 요청해 404가 나던 것을, 인라인 SVG(👑) data URI 파비콘 추가로 해결.
+
 ### [v2.9.1] - 2026-08-17
 - **친구 대전(룸 배틀) 버그 수정 (`js/app.js`, `js/supabase-sync.js`)**:
   - **시계 시작 전 공짜 연타**: `startBattle()` 호출 직후(룸 대전은 `battle_start_at` 서버 확인 전, AI 대전은 `setInterval` 등록 전) "대기 중" 화면에서 미리 연타하면 시간 소모 없이 점수가 쌓이던 버그. `battleClockRunning` 플래그를 추가해 실제 10초 카운트다운이 시작된 뒤에만 `registerMyBattleTap()`이 클릭을 반영하도록 수정.

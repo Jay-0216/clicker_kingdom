@@ -24,6 +24,7 @@ function openDB() {
 }
 
 async function hashPassword(pw) {
+  assertCryptoAvailable();
   // PBKDF2 with random salt, 100k iterations
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
@@ -33,7 +34,20 @@ async function hashPassword(pw) {
   return `pbkdf2:${saltB64}:${hashB64}`;
 }
 
+// [PATCH] crypto.subtle(Web Crypto API)는 "보안 컨텍스트"(https 또는 localhost)
+// 에서만 제공됨. iframe 미리보기/샌드박스나 순수 http 배포처럼 보안 컨텍스트가
+// 아닌 환경에서는 crypto.subtle 자체가 undefined라서, 이를 확인하지 않고
+// crypto.subtle.digest(...)를 바로 호출하면 "Cannot read properties of
+// undefined (reading 'digest')"로 로그인/회원가입이 아무 안내 없이 조용히
+// 깨져버렸음(uncaught promise rejection). 미리 확인해서 명확한 에러를 던짐.
+function assertCryptoAvailable() {
+  if (!window.crypto || !window.crypto.subtle) {
+    throw new Error('CRYPTO_UNAVAILABLE');
+  }
+}
+
 async function verifyPassword(pw, storedHash) {
+  assertCryptoAvailable();
   if (storedHash && storedHash.startsWith('pbkdf2:')) {
     const parts = storedHash.split(':');
     if (parts.length !== 3) return false;
@@ -2212,6 +2226,18 @@ async function handleCloudRefresh() {
   }
 }
 
+// [PATCH] crypto.subtle이 없는 환경(보안 컨텍스트가 아닌 iframe 미리보기 등)
+// 이거나 그 밖의 예상 못한 오류가 나면, 예전엔 handleLogin/handleSignup이
+// try/catch 없이 그냥 uncaught promise rejection으로 죽어서 화면엔 아무
+// 안내도 없이 로그인/회원가입 버튼이 조용히 먹통이 되는 것처럼 보였음.
+// 사용자에게 원인을 알 수 있는 문구를 보여주기 위한 공통 헬퍼.
+function describeAuthError(err) {
+  if (err && err.message === 'CRYPTO_UNAVAILABLE') {
+    return '이 브라우저 환경(보안 컨텍스트 아님)에서는 로그인/회원가입 암호화 기능을 사용할 수 없어요. HTTPS 주소로 다시 열어 주세요.';
+  }
+  return '처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.';
+}
+
 async function handleLogin() {
   const id = document.getElementById('loginId').value.trim();
   const pw = document.getElementById('loginPw').value;
@@ -2219,42 +2245,49 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await loadPreferredAccount(id);
-  if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+  let account;
+  try {
+    account = await loadPreferredAccount(id);
+    if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
-  const valid = await verifyPassword(pw, account.passwordHash);
-  if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+    const valid = await verifyPassword(pw, account.passwordHash);
+    if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
-  // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
-  if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
-    account.passwordHash = await hashPassword(pw);
-    await setAccount(account);
+    // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
+    if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
+      account.passwordHash = await hashPassword(pw);
+      await setAccount(account);
+    }
+
+    if (applyEmergencySnapshot(account)) {
+      await setAccount(account);
+      scheduleSave();
+    }
+
+    state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
+    state.avatar = account.avatar || '👑';
+    state.armies = account.armies || {};
+    state.relics = account.relics || {};
+    state.effects = account.effects || [];
+    state.equippedEffect = account.equippedEffect || null;
+    state.offlineArmies = account.offlineArmies || {};
+    state.equippedTitle = account.equippedTitle || 'title_novice';
+    state.unlockedTitles = account.unlockedTitles || ['title_novice'];
+    state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
+    state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
+
+    recalculateCPS();
+    recalculateMultipliers();
+
+    // Process Offline Background CPS Harvest Modal
+    checkOfflineHarvest(account.lastOfflineTime);
+
+    await setSession(account.id);
+  } catch (err) {
+    console.warn('handleLogin error:', err);
+    errEl.textContent = describeAuthError(err);
+    return;
   }
-
-  if (applyEmergencySnapshot(account)) {
-    await setAccount(account);
-    scheduleSave();
-  }
-
-  state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
-  state.avatar = account.avatar || '👑';
-  state.armies = account.armies || {};
-  state.relics = account.relics || {};
-  state.effects = account.effects || [];
-  state.equippedEffect = account.equippedEffect || null;
-  state.offlineArmies = account.offlineArmies || {};
-  state.equippedTitle = account.equippedTitle || 'title_novice';
-  state.unlockedTitles = account.unlockedTitles || ['title_novice'];
-  state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
-  state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
-  
-  recalculateCPS();
-  recalculateMultipliers();
-
-  // Process Offline Background CPS Harvest Modal
-  checkOfflineHarvest(account.lastOfflineTime);
-
-  await setSession(account.id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -2282,28 +2315,34 @@ async function handleSignup() {
     return;
   }
 
-  const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
-  if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
+  try {
+    const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
+    if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
-  const passwordHash = await hashPassword(pw);
-  const account = {
-    id, nickname, passwordHash, clicks: "0", // [PATCH] 타입 일관성(문자열) 유지
-    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
-    warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
-    missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
-    lastOfflineTime: Date.now(),
-    createdAt: Date.now(),
-    updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
-  };
+    const passwordHash = await hashPassword(pw);
+    const account = {
+      id, nickname, passwordHash, clicks: "0", // [PATCH] 타입 일관성(문자열) 유지
+      armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
+      warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
+      missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
+      lastOfflineTime: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
+    };
 
-  await setAccount(account);
-  if (typeof supabaseSyncAccount === 'function') {
-    await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+    await setAccount(account);
+    if (typeof supabaseSyncAccount === 'function') {
+      await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+    }
+
+    state.currentUser = { id, nickname, clicks: "0" };
+    state.localClicks = "0";
+    await setSession(id);
+  } catch (err) {
+    console.warn('handleSignup error:', err);
+    errEl.textContent = describeAuthError(err);
+    return;
   }
-
-  state.currentUser = { id, nickname, clicks: "0" };
-  state.localClicks = "0";
-  await setSession(id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
