@@ -155,15 +155,24 @@ function getAccountFreshness(account) {
 }
 
 async function loadPreferredAccount(id) {
+  const localAccount = await getAccount(id);
   let cloudAccount = null;
   if (typeof supabaseFetchAccount === 'function') {
     cloudAccount = await supabaseFetchAccount(id);
   }
   if (cloudAccount) {
+    // [FIX] passwordHash는 보안상 클라우드(Supabase)에 저장/조회되지 않아
+    // cloudAccount에는 이 필드가 없음. 예전엔 이 상태로 setAccount()를 호출해
+    // 로컬 IndexedDB 계정을 통째로 덮어써서, 로그인 검증 전에 저장된
+    // passwordHash가 사라져 "아이디/비번이 맞아도 로그인이 안 되는" 버그가 있었음.
+    // 로컬에 남아있던 passwordHash를 유지해서 병합한다.
+    if (localAccount && localAccount.passwordHash) {
+      cloudAccount.passwordHash = localAccount.passwordHash;
+    }
     await setAccount(cloudAccount);
     return cloudAccount;
   }
-  return await getAccount(id);
+  return localAccount;
 }
 
 function saveEmergencySnapshot() {

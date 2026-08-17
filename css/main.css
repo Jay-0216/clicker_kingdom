@@ -654,8 +654,15 @@ textarea:focus-visible {
   100% { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg) contrast(1.5); }
 }
 
-.glitch-text, .glitch-number {
+.glitch-text {
   animation: glitchTextAnim 0.3s infinite linear alternate-reverse;
+  color: #ff0055 !important;
+  font-family: monospace;
+}
+
+/* [FIX] 숫자(클릭 카운트)는 지직거림/색분리 애니메이션을 빼서 숫자를 읽기 쉽게 유지.
+   숫자 ↔ ∞ 전환 자체(js/app.js renderClickerView)는 그대로 유지된다. */
+.glitch-number {
   color: #ff0055 !important;
   font-family: monospace;
 }

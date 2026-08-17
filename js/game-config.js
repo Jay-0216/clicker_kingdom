@@ -465,7 +465,12 @@ const DAILY_MISSIONS = [
 function toBig(val) {
   if (typeof val === 'bigint') return val;
   if (typeof val === 'string' && /^-?\d+$/.test(val)) return BigInt(val);
-  if (typeof val === 'number' && isFinite(val) && val <= Number.MAX_SAFE_INTEGER) return BigInt(Math.floor(val));
+  // [FIX] Number.MAX_SAFE_INTEGER(약 900조)보다 큰 값을 전부 0으로 버리던 버그.
+  // Math.floor(val)은 그 범위를 넘는 숫자여도 이미 정수값이므로(부동소수점 특성상
+  // 큰 수는 항상 정수로 표현됨) BigInt() 변환에 안전하다. 이 상한선 때문에
+  // 무한 에너지 기관 가격(1e16)이나 MAX_TIER_CLICKS(1e200) 같은 큰 상수가
+  // 전부 0으로 취급되어 "가격 0원", "0클릭인데 무한 이펙트 발동" 버그가 있었음.
+  if (typeof val === 'number' && isFinite(val)) return BigInt(Math.floor(val));
   return BigInt(0);
 }
 
