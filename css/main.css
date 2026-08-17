@@ -29,6 +29,26 @@ html, body {
   flex-direction: column;
 }
 
+.site-footer {
+  margin-top: auto;
+  padding: 18px 16px;
+  text-align: center;
+  border-top: 1px solid rgba(212, 175, 55, 0.18);
+}
+
+.site-footer-credit {
+  font-size: 12px;
+  color: var(--parchment-dim);
+  text-decoration: none;
+  letter-spacing: 0.3px;
+  transition: color 0.2s ease;
+}
+
+.site-footer-credit:hover {
+  color: var(--gold-bright);
+  text-decoration: underline;
+}
+
 button {
   font-family: inherit;
   cursor: pointer;

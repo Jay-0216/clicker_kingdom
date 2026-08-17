@@ -478,7 +478,14 @@ async function supabaseJoinRoom(code, guestData) {
     // 서로 다른 시점에 배틀이 끝나는 문제가 있었음.
     // -> host가 matched를 감지한 뒤 battle_start_at(서버 타임스탬프)을 기록하고,
     //    host/guest 둘 다 그 타임스탬프를 기준으로 같은 시각에 시작하도록 바꿈.
-    const { error } = await client
+    //
+    // [PATCH] 기존엔 코드/상태를 확인하지 않고 무조건 덮어써서, 실수로 입장
+    // 버튼을 두 번 누르거나 제3자가 이미 매칭된(혹은 대전 중인) 방 코드로
+    // 입장하면 guest_id와 battle_start_at이 다시 null로 리셋되어 진행 중인
+    // 대전이 깨지는 문제가 있었음. status가 'waiting'이고 guest_id가 비어있는
+    // 방에만 입장할 수 있도록 조건을 걸어, 이미 다른 사람이 입장한 방은
+    // 매칭 자체가 실패(false 반환)하도록 함.
+    const { data, error } = await client
       .from('rooms')
       .update({
         guest_id: guestData.id,
@@ -486,10 +493,14 @@ async function supabaseJoinRoom(code, guestData) {
         status: 'matched',
         battle_start_at: null // 새 매칭이므로 이전 대전의 시작 시각 초기화
       })
-      .eq('code', String(code));
+      .eq('code', String(code))
+      .eq('status', 'waiting')
+      .is('guest_id', null)
+      .select('code')
+      .single();
 
-    if (error) {
-      console.warn('supabaseJoinRoom error:', error);
+    if (error || !data) {
+      console.warn('supabaseJoinRoom: room not joinable (already matched or missing)', error);
       return false;
     }
     return true;

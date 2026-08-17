@@ -24,6 +24,7 @@ function openDB() {
 }
 
 async function hashPassword(pw) {
+  assertCryptoAvailable();
   // PBKDF2 with random salt, 100k iterations
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
@@ -33,7 +34,20 @@ async function hashPassword(pw) {
   return `pbkdf2:${saltB64}:${hashB64}`;
 }
 
+// [PATCH] crypto.subtle(Web Crypto API)는 "보안 컨텍스트"(https 또는 localhost)
+// 에서만 제공됨. iframe 미리보기/샌드박스나 순수 http 배포처럼 보안 컨텍스트가
+// 아닌 환경에서는 crypto.subtle 자체가 undefined라서, 이를 확인하지 않고
+// crypto.subtle.digest(...)를 바로 호출하면 "Cannot read properties of
+// undefined (reading 'digest')"로 로그인/회원가입이 아무 안내 없이 조용히
+// 깨져버렸음(uncaught promise rejection). 미리 확인해서 명확한 에러를 던짐.
+function assertCryptoAvailable() {
+  if (!window.crypto || !window.crypto.subtle) {
+    throw new Error('CRYPTO_UNAVAILABLE');
+  }
+}
+
 async function verifyPassword(pw, storedHash) {
+  assertCryptoAvailable();
   if (storedHash && storedHash.startsWith('pbkdf2:')) {
     const parts = storedHash.split(':');
     if (parts.length !== 3) return false;
@@ -548,6 +562,11 @@ let myClicksInBattle = 0;
 let enemyClicksInBattle = 0;
 let currentEnemy = null;
 let myGeneratedRoomCode = null;
+// [PATCH] 진짜 10초 카운트다운이 시작된 뒤에만 true. startBattle() 호출 직후부터
+// (룸 대전은 서버 battle_start_at 확인까지, AI 대전은 setInterval 등록까지) 대전
+// 화면은 이미 떠있지만 아직 시계는 안 돈 "공백 구간"에 registerMyBattleTap이
+// 시간 소모 없이 클릭을 무제한 카운트해버리던 버그를 막기 위한 플래그.
+let battleClockRunning = false;
 
 let activeRoomCode = null;
 let currentRoomRole = null; // 'host' or 'guest' or null (AI)
@@ -590,6 +609,7 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
   myClicksInBattle = 0;
   enemyClicksInBattle = 0;
   battleTimeLeft = 10;
+  battleClockRunning = false;
 
   document.getElementById('battleSetupPanel').hidden = true;
   document.getElementById('battleArenaPanel').hidden = false;
@@ -616,6 +636,7 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
     runRoomBattleSync();
   } else {
     document.getElementById('battleTimerDisplay').textContent = '10s';
+    battleClockRunning = true;
     battleInterval = setInterval(() => {
       battleTimeLeft--;
       document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
@@ -668,6 +689,7 @@ async function runRoomBattleSync() {
   }
 
   document.getElementById('battleTimerDisplay').textContent = '10s';
+  battleClockRunning = true;
 
   battleInterval = setInterval(async () => {
     const elapsedSec = Math.floor((Date.now() - startAtMs) / 1000);
@@ -692,7 +714,10 @@ async function runRoomBattleSync() {
 }
 
 function registerMyBattleTap() {
-  if (battleTimeLeft <= 0) return;
+  // [PATCH] 실제 10초 시계가 돌기 전(대기 화면에서 미리 연타)에는 카운트하지
+  // 않음. battleClockRunning이 false인 동안 클릭이 시간 소모 없이 무제한
+  // 반영되던 버그를 막기 위함.
+  if (!battleClockRunning || battleTimeLeft <= 0) return;
   myClicksInBattle += 1;
   updateFrontlineVisual();
 
@@ -718,12 +743,19 @@ function updateFrontlineVisual() {
 
 function endBattle() {
   clearInterval(battleInterval);
+  battleClockRunning = false;
 
-  const isWin = myClicksInBattle >= enemyClicksInBattle;
+  // [PATCH] 예전엔 "내 점수 >= 상대 점수"만 봐서 동점일 때 호스트/게스트
+  // 양쪽 클라이언트 모두 자신을 승자로 판단해 둘 다 승리 보상을 받는 문제가
+  // 있었음. 동점은 무승부로 별도 처리해서 어느 쪽도 이중 보상을 받지 않게 함.
+  const isDraw = myClicksInBattle === enemyClicksInBattle;
+  const isWin = !isDraw && myClicksInBattle > enemyClicksInBattle;
   state.warRecords.totalBattles = (state.warRecords.totalBattles || 0) + 1;
   state.missionProgress.battleCount = (state.missionProgress.battleCount || 0) + 1;
 
-  if (isWin) {
+  if (isDraw) {
+    showToast(`🤝 무승부! 10초 클릭 (${myClicksInBattle}회 vs 적 ${enemyClicksInBattle}회) - 승부를 가리지 못했습니다.`);
+  } else if (isWin) {
     state.warRecords.wins = (state.warRecords.wins || 0) + 1;
     const plunder = Math.max(1000, myClicksInBattle * 100);
     state.warRecords.plunderedClicks = (state.warRecords.plunderedClicks || 0) + plunder;
@@ -751,7 +783,45 @@ function endBattle() {
   setTimeout(() => {
     document.getElementById('battleSetupPanel').hidden = false;
     document.getElementById('battleArenaPanel').hidden = true;
+    resetRoomCodeUI();
   }, 1500);
+}
+
+// 룸 코드 카드/친구 코드 입력 칸을 대전 시작 전 초기 상태로 되돌림.
+function resetRoomCodeUI() {
+  const roomCard = document.getElementById('myRoomCodeCard');
+  const joinSection = document.getElementById('joinRoomSection');
+  const roomInput = document.getElementById('roomCodeInput');
+  if (roomCard) roomCard.hidden = true;
+  if (joinSection) joinSection.hidden = false;
+  if (roomInput) roomInput.value = '';
+}
+
+// [PATCH] 대전 화면을 벗어날 때(다른 메뉴 탭 클릭 등) 배틀 인터벌/룸 대기
+// 폴링이 백그라운드에서 계속 돌던 버그를 막기 위한 정리 함수. switchView()가
+// 'battle'이 아닌 다른 뷰로 이동할 때 호출됨.
+function stopBattleActivity() {
+  if (battleInterval) {
+    clearInterval(battleInterval);
+    battleInterval = null;
+  }
+  if (roomWaitingPollInterval) {
+    clearInterval(roomWaitingPollInterval);
+    roomWaitingPollInterval = null;
+  }
+  battleClockRunning = false;
+
+  if (activeRoomCode && typeof supabaseCleanupRoom === 'function') {
+    supabaseCleanupRoom(activeRoomCode);
+  }
+  activeRoomCode = null;
+  currentRoomRole = null;
+
+  const setupPanel = document.getElementById('battleSetupPanel');
+  const arenaPanel = document.getElementById('battleArenaPanel');
+  if (setupPanel) setupPanel.hidden = false;
+  if (arenaPanel) arenaPanel.hidden = true;
+  resetRoomCodeUI();
 }
 
 // ---------- 7. Missions Module ----------
@@ -1072,6 +1142,11 @@ function switchView(viewName) {
       cancelAnimationFrame(shooterAnimFrame);
       shooterAnimFrame = null;
     }
+  }
+
+  // Stop battle interval / room polling if navigating away from battle view
+  if (viewName !== 'battle' && typeof battleInterval !== 'undefined' && (battleInterval || roomWaitingPollInterval)) {
+    stopBattleActivity();
   }
 
   // Start/stop emoji rain based on CPS when entering clicker view
@@ -2151,6 +2226,18 @@ async function handleCloudRefresh() {
   }
 }
 
+// [PATCH] crypto.subtle이 없는 환경(보안 컨텍스트가 아닌 iframe 미리보기 등)
+// 이거나 그 밖의 예상 못한 오류가 나면, 예전엔 handleLogin/handleSignup이
+// try/catch 없이 그냥 uncaught promise rejection으로 죽어서 화면엔 아무
+// 안내도 없이 로그인/회원가입 버튼이 조용히 먹통이 되는 것처럼 보였음.
+// 사용자에게 원인을 알 수 있는 문구를 보여주기 위한 공통 헬퍼.
+function describeAuthError(err) {
+  if (err && err.message === 'CRYPTO_UNAVAILABLE') {
+    return '이 브라우저 환경(보안 컨텍스트 아님)에서는 로그인/회원가입 암호화 기능을 사용할 수 없어요. HTTPS 주소로 다시 열어 주세요.';
+  }
+  return '처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.';
+}
+
 async function handleLogin() {
   const id = document.getElementById('loginId').value.trim();
   const pw = document.getElementById('loginPw').value;
@@ -2158,42 +2245,49 @@ async function handleLogin() {
   errEl.textContent = '';
   if (!id || !pw) { errEl.textContent = '아이디와 비밀번호를 입력해 주세요.'; return; }
 
-  const account = await loadPreferredAccount(id);
-  if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+  let account;
+  try {
+    account = await loadPreferredAccount(id);
+    if (!account) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
-  const valid = await verifyPassword(pw, account.passwordHash);
-  if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
+    const valid = await verifyPassword(pw, account.passwordHash);
+    if (!valid) { errEl.textContent = '아이디 또는 비밀번호가 올바르지 않아요.'; return; }
 
-  // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
-  if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
-    account.passwordHash = await hashPassword(pw);
-    await setAccount(account);
+    // Upgrade legacy SHA-256 hash to PBKDF2 on successful login
+    if (account.passwordHash && !account.passwordHash.startsWith('pbkdf2:')) {
+      account.passwordHash = await hashPassword(pw);
+      await setAccount(account);
+    }
+
+    if (applyEmergencySnapshot(account)) {
+      await setAccount(account);
+      scheduleSave();
+    }
+
+    state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
+    state.avatar = account.avatar || '👑';
+    state.armies = account.armies || {};
+    state.relics = account.relics || {};
+    state.effects = account.effects || [];
+    state.equippedEffect = account.equippedEffect || null;
+    state.offlineArmies = account.offlineArmies || {};
+    state.equippedTitle = account.equippedTitle || 'title_novice';
+    state.unlockedTitles = account.unlockedTitles || ['title_novice'];
+    state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
+    state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
+
+    recalculateCPS();
+    recalculateMultipliers();
+
+    // Process Offline Background CPS Harvest Modal
+    checkOfflineHarvest(account.lastOfflineTime);
+
+    await setSession(account.id);
+  } catch (err) {
+    console.warn('handleLogin error:', err);
+    errEl.textContent = describeAuthError(err);
+    return;
   }
-
-  if (applyEmergencySnapshot(account)) {
-    await setAccount(account);
-    scheduleSave();
-  }
-
-  state.currentUser = { id: account.id, nickname: account.nickname, clicks: String(account.clicks || 0) };
-  state.avatar = account.avatar || '👑';
-  state.armies = account.armies || {};
-  state.relics = account.relics || {};
-  state.effects = account.effects || [];
-  state.equippedEffect = account.equippedEffect || null;
-  state.offlineArmies = account.offlineArmies || {};
-  state.equippedTitle = account.equippedTitle || 'title_novice';
-  state.unlockedTitles = account.unlockedTitles || ['title_novice'];
-  state.warRecords = account.warRecords || { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 };
-  state.missionProgress = account.missionProgress || { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} };
-  
-  recalculateCPS();
-  recalculateMultipliers();
-
-  // Process Offline Background CPS Harvest Modal
-  checkOfflineHarvest(account.lastOfflineTime);
-
-  await setSession(account.id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -2221,28 +2315,34 @@ async function handleSignup() {
     return;
   }
 
-  const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
-  if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
+  try {
+    const existing = await loadPreferredAccount(id); // 수정: 다른 기기에서 이미 만든 계정도 중복 검사에 잡히게 한다.
+    if (existing) { errEl.textContent = '이미 사용 중인 아이디예요.'; return; }
 
-  const passwordHash = await hashPassword(pw);
-  const account = {
-    id, nickname, passwordHash, clicks: "0", // [PATCH] 타입 일관성(문자열) 유지
-    armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
-    warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
-    missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
-    lastOfflineTime: Date.now(),
-    createdAt: Date.now(),
-    updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
-  };
+    const passwordHash = await hashPassword(pw);
+    const account = {
+      id, nickname, passwordHash, clicks: "0", // [PATCH] 타입 일관성(문자열) 유지
+      armies: {}, relics: {}, effects: [], equippedEffect: null, offlineArmies: {}, equippedTitle: 'title_novice', unlockedTitles: ['title_novice'],
+      warRecords: { totalBattles: 0, wins: 0, losses: 0, plunderedClicks: 0 },
+      missionProgress: { clickCount: 0, armyCount: 0, battleCount: 0, feedbackCount: 0, claimed: {} },
+      lastOfflineTime: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now() // 수정: 회원가입 직후에도 최신 데이터 비교 기준을 맞춘다.
+    };
 
-  await setAccount(account);
-  if (typeof supabaseSyncAccount === 'function') {
-    await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+    await setAccount(account);
+    if (typeof supabaseSyncAccount === 'function') {
+      await supabaseSyncAccount(account); // 수정: 첫 계정 생성은 클라우드 저장 성공 여부가 중요해서 기다린다.
+    }
+
+    state.currentUser = { id, nickname, clicks: "0" };
+    state.localClicks = "0";
+    await setSession(id);
+  } catch (err) {
+    console.warn('handleSignup error:', err);
+    errEl.textContent = describeAuthError(err);
+    return;
   }
-
-  state.currentUser = { id, nickname, clicks: "0" };
-  state.localClicks = "0";
-  await setSession(id);
   closeModal('authModal');
   renderTopbarActions();
   switchView('clicker');
@@ -2374,6 +2474,12 @@ function setupEventListeners() {
       const roomCard = document.getElementById('myRoomCodeCard');
       if (roomCard) roomCard.hidden = false;
       document.getElementById('roomCodeDisplay').textContent = code;
+      // [PATCH] 방장은 친구가 자기 코드로 입장하면 자동으로 대전이 시작되므로
+      // "친구 코드 입력" 칸을 볼 필요가 없음. 오히려 방장이 실수로 다른 방
+      // 코드를 입력해버리면 자기 방 대기가 아닌 엉뚱한 대전에 들어가버리는
+      // 혼란을 줄 수 있어 대기 중엔 숨김.
+      const joinSection = document.getElementById('joinRoomSection');
+      if (joinSection) joinSection.hidden = true;
 
       // Upload room to Supabase so friend can find it
       if (typeof supabaseCreateRoom === 'function') {
@@ -2447,10 +2553,17 @@ function setupEventListeners() {
 
           // Mark room as joined in Supabase
           if (typeof supabaseJoinRoom === 'function') {
-            await supabaseJoinRoom(inputCode, {
+            const joined = await supabaseJoinRoom(inputCode, {
               id: state.currentUser.id,
               nickname: state.currentUser.nickname
             });
+            // [PATCH] 이미 다른 사람이 입장했거나(중복 클릭/제3자) 대전 중인
+            // 방이면 joined=false. 예전엔 반환값을 무시하고 그냥 진행해서,
+            // 이미 진행 중인 방의 battle_start_at이 리셋되어 대전이 깨졌음.
+            if (!joined) {
+              showToast('❌ 이미 다른 사람이 입장했거나 진행 중인 방입니다. 코드를 다시 확인해 주세요.');
+              return;
+            }
           }
 
           const enemyInfo = {
