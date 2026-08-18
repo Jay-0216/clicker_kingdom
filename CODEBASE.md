@@ -48,6 +48,11 @@ clicker kingdom/
 
 ## 3. 변경 이력 (Changelog)
 
+### [v2.9.3] - 2026-08-18
+- **AI 대전 난이도 완화 (`js/app.js`)**:
+  - `startBattle()`의 AI(야만족 족장) 연타 시뮬레이션이 너무 강하다는 피드백을 반영해 초당 연타량 계산식(`aiPower`/`simulatedTapRate`)의 기본값과 승률 반영 폭을 낮춤.
+  - 라플라스 스무딩(가상 3패 선반영, `winRate = (wins+1)/(totalBattles+4)`)을 적용해, 대전 몇 판 안 한 상태에서 첫 승만 거둬도 승률이 곧장 100%로 튀어 다음 대전부터 AI가 최대 난이도로 세지던 문제를 완화. 이제 승률은 여러 판에 걸쳐 서서히 오르내리고, 계속 지는 유저는 AI가 다시 약해짐.
+
 ### [v2.9.2] - 2026-08-17
 - **로그인/회원가입 중 조용히 실패하던 버그 수정 (`js/app.js`)**:
   - `verifyPassword`/`hashPassword`가 `crypto.subtle`(Web Crypto API)을 확인 없이 바로 호출해서, 보안 컨텍스트가 아닌 환경(https/localhost가 아닌 iframe 미리보기 등)에서는 `crypto.subtle`이 `undefined`라 "Cannot read properties of undefined (reading 'digest')"로 uncaught promise rejection이 나며 로그인/회원가입이 아무 안내 없이 실패하던 문제. `assertCryptoAvailable()`로 미리 확인해 명확한 에러를 던지고, `handleLogin`/`handleSignup`을 try/catch로 감싸 `describeAuthError()`가 사용자에게 원인을 안내하도록 수정.

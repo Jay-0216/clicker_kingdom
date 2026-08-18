@@ -641,13 +641,16 @@ function startBattle(enemyInfo, roomCode = null, role = null) {
       battleTimeLeft--;
       document.getElementById('battleTimerDisplay').textContent = `${battleTimeLeft}s`;
 
-      // [PATCH] AI 난이도는 내 승률 기반으로 조정. 많이 이기면 점점 세지고,
-      // 많이 지면 약해짐. 연전 기록이 없는 초반엔 기본값으로 시작.
-      const total = Math.max(state.warRecords.totalBattles || 0, 1);
+      // [PATCH] AI가 너무 강하다는 피드백을 반영해 기본 연타 속도를 낮추고,
+      // 승률 계산에 라플라스 스무딩(가상 3패 선반영)을 적용함. 스무딩이 없으면
+      // 대전 몇 판 안 한 상태에서 첫 승만 거둬도 winRate가 곧장 100%로 튀어서
+      // 두 번째 대전부터 AI가 최대 난이도로 세지는 문제가 있었음. 이제 승률은
+      // 여러 판을 거쳐야 서서히 오르내리고, 계속 지는 유저는 AI가 다시 약해짐.
+      const totalBattles = state.warRecords.totalBattles || 0;
       const wins = state.warRecords.wins || 0;
-      const winRate = wins / total;
-      const aiPower = 0.3 + winRate * 0.9;
-      const simulatedTapRate = Math.floor(4 + Math.random() * 4 + aiPower * 2.5);
+      const winRate = (wins + 1) / (totalBattles + 4);
+      const aiPower = 0.15 + winRate * 0.5;
+      const simulatedTapRate = Math.floor(2 + Math.random() * 3 + aiPower * 2);
       enemyClicksInBattle += simulatedTapRate;
 
       updateFrontlineVisual();
