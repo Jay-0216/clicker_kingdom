@@ -1609,7 +1609,7 @@ function renderClickerView(clicks, tier) {
   const clickPerTapText = clickPerTap % 1 === 0
     ? formatNumber(clickPerTap)
     : clickPerTap.toFixed(2).replace(/\.?0+$/, '');
-  document.getElementById('cpsLabel').textContent = `자동 수확: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초 | 🖱️ 클릭당: +${clickPerTapText}`;
+  document.getElementById('cpsLabel').textContent = `CPS: +${formatNumber(state.cps)} /초 | 🌙 백그라운드: +${formatNumber(state.offlineCps)} /초 | 🖱️ 클릭당: +${clickPerTapText}`;
   document.getElementById('guestBanner').hidden = !!state.currentUser;
 
   const tObj = UNLOCKABLE_TITLES.find(t => t.id === state.equippedTitle);

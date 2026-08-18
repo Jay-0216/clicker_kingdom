@@ -76,7 +76,8 @@ function formatNumber(n, decimals = 2) {
       return `${formatted}${suffix}`;
     }
   }
-  return Math.floor(n).toLocaleString();
+  if (Number.isInteger(n)) return n.toLocaleString();
+  return n.toFixed(decimals).replace(/\.?0+$/, '');
 }
 
 /**
